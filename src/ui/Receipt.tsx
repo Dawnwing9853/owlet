@@ -12,6 +12,8 @@ interface Props {
   breakdown: BillBreakdown
   /** In the order they should be listed. */
   people: Person[]
+  /** Show only saved totals and amounts, with no worked-out details. */
+  summaryOnly?: boolean
 }
 
 function Line({ label, amount, strong }: { label: string; amount: Satang; strong?: boolean }) {
@@ -23,7 +25,7 @@ function Line({ label, amount, strong }: { label: string; amount: Satang; strong
   )
 }
 
-export function Receipt({ title, date, draft, breakdown, people }: Props) {
+export function Receipt({ title, date, draft, breakdown, people, summaryOnly }: Props) {
   const nameOf = (id: PersonId) => people.find((p) => p.id === id)?.name ?? '(ไม่ทราบชื่อ)'
   const { totals, unassigned } = breakdown
   const priced = draft.items.filter((item) => Number.isFinite(item.price))
@@ -61,7 +63,7 @@ export function Receipt({ title, date, draft, breakdown, people }: Props) {
           </ul>
 
           <div className="receipt-rule space-y-1 py-3">
-            <Line label="ค่าของ" amount={totals.subtotal} />
+            {!summaryOnly && <Line label="ค่าของ" amount={totals.subtotal} />}
             {totals.discount > 0 && <Line label="ส่วนลด" amount={-totals.discount} />}
             {totals.service > 0 && <Line label={`เซอร์วิส ${draft.servicePct}%`} amount={totals.service} />}
             {totals.vat > 0 && <Line label="VAT 7%" amount={totals.vat} />}
@@ -73,9 +75,17 @@ export function Receipt({ title, date, draft, breakdown, people }: Props) {
       {(sharers.length > 0 || (unassigned > 0 && priced.length > 0)) && (
         <section className="receipt-rule py-3">
           <h3 className="pb-1 font-medium">คนละเท่าไร</h3>
+          {summaryOnly && <p className="pb-1 text-sm">ยอดตามตอนที่บันทึก</p>}
           <ul>
             {sharers.map((person) => {
               const share = breakdown.people[person.id]!
+              if (summaryOnly) {
+                return (
+                  <li key={person.id}>
+                    <Line label={person.name} amount={share.owed} />
+                  </li>
+                )
+              }
               return (
                 <li key={person.id}>
                   <details className="group">

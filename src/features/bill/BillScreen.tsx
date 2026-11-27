@@ -1,19 +1,18 @@
 import { CircleCheck, TriangleAlert, X } from 'lucide-react'
-import { useDeferredValue, useEffect, useState, type KeyboardEvent } from 'react'
-import { toLocalDate } from '../../domain/date'
+import { useDeferredValue, useEffect, useState } from 'react'
 import { formatBaht } from '../../domain/money'
 import type { Bill, Person, PersonId } from '../../domain/types'
-import { newId } from '../../storage/ids'
 import type { AppData } from '../../storage/parse'
 import type { BillInput, SaveFailure, SaveResult } from '../../storage/repository'
+import { Tabs } from '../../ui/Tabs'
 import { AssignDialog } from './AssignDialog'
+import { EditingBanner } from './EditingBanner'
 import { ItemsStep } from './ItemsStep'
 import { LiveReceipt } from './LiveReceipt'
 import { PeopleSection } from './PeopleSection'
 import { ShareStep } from './ShareStep'
 import { nameFieldId, priceFieldId, shareRowId } from './fieldIds'
 import {
-  emptyForm,
   evaluate,
   firstProblem,
   isBlankRow,
@@ -25,10 +24,10 @@ import {
 
 type Step = 'items' | 'share'
 
-const STEPS: [Step, string][] = [
+const STEPS = [
   ['items', '1 รายการ'],
   ['share', '2 ใครหาร'],
-]
+] as const
 
 const SAVE_FAILURE: Record<SaveFailure['reason'], string> = {
   'write-failed': 'บันทึกไม่ได้ พื้นที่ในเครื่องอาจเต็ม ที่กรอกไว้ยังอยู่',
@@ -38,17 +37,20 @@ const SAVE_FAILURE: Record<SaveFailure['reason'], string> = {
   'invalid-data': 'บิลนี้ยังบันทึกไม่ได้ เช็กข้อมูลอีกรอบ',
 }
 
-const newForm = () => emptyForm(toLocalDate(new Date()), newId('i'))
-
 interface Props {
   data: AppData
+  form: BillForm
+  onChange: (form: BillForm) => void
+  /** Set while a saved bill is being edited. */
+  editing: { title: string; changed: boolean; onStop: () => void } | null
   onSaveBill: (input: BillInput) => SaveResult<Bill>
+  /** The app swaps in the next form: a fresh one, or the draft set aside. */
+  onSaved: (bill: Bill) => void
   onAddPerson: (name: string) => SaveResult<Person>
-  initialForm?: BillForm
 }
 
-export function BillScreen({ data, onSaveBill, onAddPerson, initialForm }: Props) {
-  const [form, setForm] = useState(() => initialForm ?? newForm())
+/** Give it a `key` per bill, so steps, ticks and messages don't carry across. */
+export function BillScreen({ data, form, onChange, editing, onSaveBill, onSaved, onAddPerson }: Props) {
   const [step, setStep] = useState<Step>('items')
   const [selected, setSelected] = useState<string[]>([])
   const [openRow, setOpenRow] = useState<string | null>(null)
@@ -80,7 +82,7 @@ export function BillScreen({ data, onSaveBill, onAddPerson, initialForm }: Props
   const focusLater = (id: string) => setFocusTarget({ id })
 
   function change(next: BillForm) {
-    setForm(next)
+    onChange(next)
     setSaved(null)
     setFailure(null)
   }
@@ -118,7 +120,7 @@ export function BillScreen({ data, onSaveBill, onAddPerson, initialForm }: Props
       return
     }
     setSaved(result.value)
-    setForm(newForm())
+    onSaved(result.value)
     setStep('items')
     setSelected([])
     setOpenRow(null)
@@ -132,40 +134,15 @@ export function BillScreen({ data, onSaveBill, onAddPerson, initialForm }: Props
     return result.ok ? { id: result.value.id } : { error: 'เพิ่มเพื่อนไม่ได้ พื้นที่ในเครื่องอาจเต็ม' }
   }
 
-  function onTabKey(event: KeyboardEvent) {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-    const next = step === 'items' ? 'share' : 'items'
-    setStep(next)
-    focusLater(`tab-${next}`)
-  }
-
   const savedTotal = saved ? Object.values(saved.owed).reduce((a, b) => a + b, 0) : 0
 
   return (
-    <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-10">
+    <div className="flex flex-1 flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:content-start lg:items-start lg:gap-x-10">
       <div className="min-w-0">
-        <h1 className="sr-only">{form.id ? 'แก้บิล' : 'หารบิลใหม่'}</h1>
+        <h1 className="sr-only">{editing ? 'แก้บิล' : 'หารบิลใหม่'}</h1>
 
-        <div className="mb-4 grid grid-cols-2 border-b border-line" role="tablist" aria-label="ขั้นตอน">
-          {STEPS.map(([key, label]) => (
-            <button
-              key={key}
-              id={`tab-${key}`}
-              type="button"
-              role="tab"
-              aria-selected={step === key}
-              aria-controls="step-panel"
-              tabIndex={step === key ? 0 : -1}
-              className={`min-h-12 border-b-4 text-lg ${
-                step === key ? 'border-gold font-medium' : 'border-transparent text-primary'
-              }`}
-              onClick={() => setStep(key)}
-              onKeyDown={onTabKey}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {editing && <EditingBanner {...editing} />}
+        <Tabs label="ขั้นตอน" tabs={STEPS} value={step} panelId="step-panel" onChange={setStep} />
 
         {saved && (
           <div className="mb-4 flex items-center gap-2 rounded-xl border border-line bg-paper py-1 pl-3" role="status">
@@ -209,14 +186,14 @@ export function BillScreen({ data, onSaveBill, onAddPerson, initialForm }: Props
 
       {/* One receipt: below step 2 on a phone, always beside the form when wide. */}
       <aside
-        className={`pb-6 drop-shadow-sm lg:sticky lg:top-4 lg:block lg:max-h-[calc(100dvh-10rem)] lg:overflow-y-auto ${
+        className={`pb-6 drop-shadow-sm lg:sticky lg:top-4 lg:block lg:max-h-[calc(100dvh-14rem)] lg:overflow-y-auto ${
           step === 'share' ? '' : 'hidden'
         }`}
       >
         <LiveReceipt form={receiptForm} people={data.people} />
       </aside>
 
-      <div className="sticky bottom-0 z-10 -mx-4 border-t-2 border-line bg-bg px-4 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] lg:col-span-2">
+      <div className="above-nav sticky z-10 -mx-4 mt-auto border-t-2 border-line bg-bg px-4 py-2 lg:col-span-2">
         {step === 'share' && ticked.length > 0 && (
           <div className="mb-2 flex flex-wrap items-center gap-2 border-b border-line pb-2">
             <button

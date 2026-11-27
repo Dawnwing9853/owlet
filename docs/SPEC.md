@@ -106,6 +106,10 @@ Order, per person:
 3. **กลุ่ม**: list, create, detail (members, entries, balances inside the group, simplify toggle, archive).
 4. **สรุปเดือน**: month picker; numbers + simple CSS/SVG bars: ส่วนที่เรากินจริง (my owed), เงินที่ควักออกไป (my `payers` amounts in bills + money lent), ให้ยืม / ได้คืน, breakdown by group.
 5. **ตั้งค่า**: friends (rename, archive — can't archive with non-zero balance), friend rename is built in P2 (archive comes later), my PromptPay ID (after entering it, ask me to scan my own QR and check the payee name my bank app shows; P3), backup, history list.
+   - Two sub-tabs: **ประวัติ** (shown first) and **เพื่อน**. A bottom nav has หารบิล and ตั้งค่า; switching keeps a half-typed bill. On touch screens the nav hides while typing in a field.
+   - ประวัติ: saved bills, newest date first, with title, date, head count and total. A row opens the receipt **as saved** (from the `owed` snapshot), with แก้ and ลบ. Delete asks first, naming the bill and total.
+   - แก้ opens the bill on หารบิล with "กำลังแก้ …" and เลิกแก้. A half-typed new bill is set aside and comes back after saving or cancelling (kept only while the app is open); both return to ประวัติ. Unsaved changes to an edit are only dropped after asking. Deleting the bill being edited ends the edit.
+   - เพื่อน: friends as colour chips with แก้ชื่อ inline; the colour stays. People who still need a name come first, marked. "เรา" isn't listed. A duplicate name is warned about but allowed. Friends are added on หารบิล only.
 
 ## Sharing
 - Text: copy to clipboard + LINE share link (check LINE's current share URL format). Text = title, total, each person's amount, my PromptPay.
@@ -243,3 +247,7 @@ Accounts/login, backend, multi-user sync, multiple currencies, receipt OCR, noti
 | 2026-11-27 | The bill total includes items nobody shares yet. | Otherwise the total would read ฿0.00 while items are being typed. |
 | 2026-11-27 | Shape brief approved: me included from the start, batch assign replaces, removing a person asks first, "ทุกคน" does not grow later, receipt placement, no note field. | Owner approved the brief. |
 | 2026-11-27 | Solid person colours 15-17 changed to navy `#1F3A68`, deep violet `#3B2F6B` and dark teal `#0B4F4A`. | Owner choice from screenshots: the amber, ochre and mustard versions looked like the owl-brown "เรา" chip. |
+| 2026-11-27 | `/impeccable critique` runs once, covering the bill and settings screens together, with its two subagents. | Owner choice, to save usage. The spec asks for one after each screen. |
+| 2026-11-27 | Editing a saved bill sets any half-typed new bill aside, and brings it back afterwards (kept only while the app is open). | Owner choice in `/impeccable shape` for ตั้งค่า. |
+| 2026-11-27 | ตั้งค่า has two sub-tabs, ประวัติ (shown first) and เพื่อน. | Owner choice: history grows and the friend list can be 30 long. |
+| 2026-11-27 | Settings brief approved: sub-tabs, history shows bills as saved, ask before dropping unsaved edits, nav hides while typing on touch screens, duplicate names warned but allowed. | Owner approved the brief. |

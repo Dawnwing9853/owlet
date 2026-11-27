@@ -20,6 +20,7 @@
 
 :root {
   color-scheme: light;
+  --nav-h: calc(3.5rem + env(safe-area-inset-bottom));
 
   /*
    * Person colours: 30 slots. 0-14 are soft chips, 15-29 solid ones.
@@ -95,8 +96,8 @@
 @layer base {
   html {
     background: var(--color-bg);
-    /* Keep a focused field clear of the pinned total bar. */
-    scroll-padding-bottom: 11rem;
+    /* Keep a focused field clear of the pinned total bar and the nav. */
+    scroll-padding-bottom: calc(11rem + var(--nav-h));
   }
 
   body {
@@ -280,6 +281,46 @@
 
   .receipt-rule {
     border-top: 1.5px dashed color-mix(in srgb, var(--color-ink) 55%, white);
+  }
+}
+
+.bottom-nav {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 20;
+  height: var(--nav-h);
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 1px solid var(--color-line);
+  background: var(--color-paper);
+}
+
+.above-nav {
+  bottom: var(--nav-h);
+}
+
+/*
+ * While typing on a phone, the nav gets out of the way. It comes back a moment
+ * after the field is left: moving at once would slide the save button out from
+ * under the finger that is tapping it.
+ */
+@media (pointer: coarse) {
+  .bottom-nav {
+    transition: visibility 0s 0.4s;
+  }
+
+  .above-nav {
+    transition: bottom 0s 0.4s;
+  }
+
+  body:has(input:is([type='text'], [type='date'], :not([type])):focus) .bottom-nav {
+    visibility: hidden;
+    transition: none;
+  }
+
+  body:has(input:is([type='text'], [type='date'], :not([type])):focus) .above-nav {
+    bottom: 0;
+    transition: none;
   }
 }
 
