@@ -22,7 +22,10 @@
   color-scheme: light;
 
   /*
-   * Person colours: 15 hues × 2 styles. Slots 0-14 are soft chips, 15-29 solid.
+   * Person colours: 30 slots. 0-14 are soft chips, 15-29 solid ones.
+   * Slots 18-29 are solid versions of the hues in 3-14. Slots 15-17 are navy,
+   * deep violet and dark teal instead of the hues in 0-2, whose solid versions
+   * looked like my own owl-brown chip.
    * People store the slot number only, so these can change later.
    * Hues next to debt rust and paid olive are left out on purpose.
    * Never use them for amounts or status.
@@ -57,11 +60,11 @@
   --person-13-fg: #692845;
   --person-14-bg: #FFDBE0;
   --person-14-fg: #6D2736;
-  --person-15-bg: #864900;
+  --person-15-bg: #1F3A68;
   --person-15-fg: #FFFFFF;
-  --person-16-bg: #7B5200;
+  --person-16-bg: #3B2F6B;
   --person-16-fg: #FFFFFF;
-  --person-17-bg: #6A5B00;
+  --person-17-bg: #0B4F4A;
   --person-17-fg: #FFFFFF;
   --person-18-bg: #106C3E;
   --person-18-fg: #FFFFFF;

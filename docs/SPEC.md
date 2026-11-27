@@ -150,11 +150,11 @@ Feed this into `/impeccable init` and `/impeccable shape`. Impeccable may refine
   - Result (P2): Mitr has no tabular figures. Noto Sans Thai digits all have the same width by default, so money columns line up with it. It is not a rounded face.
 - Mobile-first, 44px touch targets, 16px inputs (no iOS zoom), `inputmode="decimal"` for money, visible focus, safe-area insets, WCAG AA contrast.
 - No emoji icons in UI; use a small icon set (lucide-react).
-- **Person colours** (up to 30 friends), so big groups are easy to tell apart. 30 slots = 15 hues × 2 styles: 0-14 soft chips, 15-29 solid chips with white text. The values are CSS variables `--person-N-bg` / `--person-N-fg` in `src/index.css`, each pair tested at 6:1 or better.
+- **Person colours** (up to 30 friends), so big groups are easy to tell apart. 30 slots: 0-14 soft chips, 15-29 solid chips with white text. Slots 18-29 use the hues of 3-14; slots 15-17 are navy, deep violet and dark teal. The values are CSS variables `--person-N-bg` / `--person-N-fg` in `src/index.css`, each pair tested at 6:1 or better.
   - A new friend gets the slot used least among non-archived friends; ties prefer soft slots, then random. Colours are never picked while drawing. A missing or invalid slot falls back to `hash(id) % 30`.
   - Chips have a thin border of the same hue, in the item "who shares" picker, the payers section and person lists. The name is always shown: past about 15 colours some look alike, so the name identifies the person.
   - Me is not a slot: an owl-brown chip labelled "เรา".
-  - Never use person colours for amounts or status, or debt rust or paid olive for people. Slots 15, 18, 29 and 14 are the risky ones (near owl brown, paid and rust): check screenshots at 375px.
+  - Never use person colours for amounts or status, or debt rust or paid olive for people. Slots 18, 29 and 14 sit closest to paid and rust: re-check them at 375px when debt and paid states reach real screens.
   - The shared receipt stays black and white (thermal look) for now.
 - **Person names are at least 16px everywhere.**
 
@@ -242,3 +242,4 @@ Accounts/login, backend, multi-user sync, multiple currencies, receipt OCR, noti
 | 2026-11-27 | Several items can be assigned at once. Added to the original spec. | Owner chose this structure in `/impeccable shape`. |
 | 2026-11-27 | The bill total includes items nobody shares yet. | Otherwise the total would read ฿0.00 while items are being typed. |
 | 2026-11-27 | Shape brief approved: me included from the start, batch assign replaces, removing a person asks first, "ทุกคน" does not grow later, receipt placement, no note field. | Owner approved the brief. |
+| 2026-11-27 | Solid person colours 15-17 changed to navy `#1F3A68`, deep violet `#3B2F6B` and dark teal `#0B4F4A`. | Owner choice from screenshots: the amber, ochre and mustard versions looked like the owl-brown "เรา" chip. |
