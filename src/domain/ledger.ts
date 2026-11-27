@@ -44,6 +44,21 @@ function changesOf(entry: Entry): Change[] {
   }
 }
 
+/** Everyone an entry points at, including people who end up owing nothing. */
+export function entryPersonIds(entry: Entry): PersonId[] {
+  const ids =
+    entry.kind === 'bill'
+      ? [
+          ...entry.items.flatMap((item) => item.sharedBy),
+          ...Object.keys(entry.payers),
+          ...Object.keys(entry.owed),
+        ]
+      : entry.kind === 'loan'
+        ? [entry.lenderId, entry.borrowerId]
+        : [entry.fromId, entry.toId]
+  return [...new Set(ids)]
+}
+
 /** Paid minus owed, per person. */
 export function entryNets(entry: Entry): Nets {
   return sumChanges(changesOf(entry))
@@ -141,11 +156,15 @@ export interface GroupEntries {
   entries: Entry[]
 }
 
-/** Entries bucketed by group, in id order, ungrouped last. */
-export function entriesByGroup(entries: readonly Entry[]): GroupEntries[] {
+/**
+ * Entries bucketed by group, in id order, ungrouped last. A groupId that matches
+ * no group counts as ungrouped. The entry itself is left as it is.
+ */
+export function entriesByGroup(entries: readonly Entry[], groups: readonly Group[]): GroupEntries[] {
+  const known = new Set(groups.map((g) => g.id))
   const buckets = new Map<string | null, Entry[]>()
   for (const entry of entries) {
-    const groupId = entry.groupId ?? null
+    const groupId = entry.groupId !== undefined && known.has(entry.groupId) ? entry.groupId : null
     const bucket = buckets.get(groupId)
     if (bucket) bucket.push(entry)
     else buckets.set(groupId, [entry])
@@ -177,7 +196,7 @@ export function debtsByGroup(
   entries: readonly Entry[],
   groups: readonly Group[],
 ): { groupId: string | null; debts: Debt[] }[] {
-  return entriesByGroup(entries).map(({ groupId, entries: list }) => ({
+  return entriesByGroup(entries, groups).map(({ groupId, entries: list }) => ({
     groupId,
     debts: bucketDebts(
       list,

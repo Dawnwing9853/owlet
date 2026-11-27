@@ -10,6 +10,8 @@ export interface Person {
   name: string
   isMe: boolean
   archived?: boolean
+  /** Set when the record had to be recreated without a name, so it can be renamed. */
+  needsName?: boolean
 }
 
 export interface Group {

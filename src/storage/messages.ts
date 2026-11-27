@@ -26,6 +26,20 @@ function field(raw: unknown, key: string): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined
 }
 
+export interface QuarantineNotice {
+  message: string
+  details: string[]
+}
+
+/** What the permanent banner says, wherever money is shown. Null means no banner. */
+export function quarantineNotice(quarantine: readonly Quarantined[]): QuarantineNotice | null {
+  if (quarantine.length === 0) return null
+  return {
+    message: `มี ${quarantine.length} รายการที่อ่านไม่ได้ ยอดอาจไม่ครบ`,
+    details: quarantine.map(describeQuarantined),
+  }
+}
+
 /** One line naming the record and what is wrong with it. */
 export function describeQuarantined({ collection, raw, problems }: Quarantined): string {
   const kind = KIND_TEXT[field(raw, 'kind') ?? ''] ?? COLLECTION_TEXT[collection]

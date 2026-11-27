@@ -38,6 +38,8 @@ const repay = (date: string, fromId: string, toId: string, amount: number, group
   groupId,
 })
 
+const GROUPS = ['trip', 'other', 'g1', 'g2'].map((id) => ({ id, name: id, memberIds: [], createdAt: 0 }))
+
 const ZERO = { myShare: 0, cashOut: 0, lent: 0, repaidToMe: 0 }
 
 describe('monthSummary', () => {
@@ -54,7 +56,7 @@ describe('monthSummary', () => {
   ]
 
   it('totals the month and breaks it down by group, ungrouped last', () => {
-    expect(monthSummary(list, 'me', '2026-11')).toEqual({
+    expect(monthSummary(list, GROUPS, 'me', '2026-11')).toEqual({
       month: '2026-11',
       totals: { myShare: 8025, cashOut: 12050, lent: 2000, repaidToMe: 1500 },
       byGroup: [
@@ -66,11 +68,18 @@ describe('monthSummary', () => {
 
   it('leaves out groups with nothing of mine', () => {
     const others = [bill('2026-11-05', { ton: 100 }, { mew: 100 }, 'other'), loan('2026-11-05', 'me', 'me', 50)]
-    expect(monthSummary(others, 'me', '2026-11')).toEqual({ month: '2026-11', totals: ZERO, byGroup: [] })
+    expect(monthSummary(others, GROUPS, 'me', '2026-11')).toEqual({ month: '2026-11', totals: ZERO, byGroup: [] })
+  })
+
+  it('counts a group that does not exist as no group', () => {
+    const orphan = [loan('2026-11-05', 'me', 'ton', 300, 'gone'), loan('2026-11-06', 'me', 'ton', 200)]
+    expect(monthSummary(orphan, GROUPS, 'me', '2026-11').byGroup).toEqual([
+      { groupId: null, myShare: 0, cashOut: 500, lent: 500, repaidToMe: 0 },
+    ])
   })
 
   it.each(['2026-13', '2026-00', '2026-1', '2026', '2026-11-01', '12026-11', ''])('refuses the month %j', (month) => {
-    expect(() => monthSummary([], 'me', month)).toThrow(RangeError)
+    expect(() => monthSummary([], GROUPS, 'me', month)).toThrow(RangeError)
   })
 
 })
@@ -106,7 +115,7 @@ describe('monthSummary properties', () => {
     fc.assert(
       fc.property(entries, (list) => {
         for (const m of MONTHS) {
-          expect(monthSummary(list, 'me', m).totals).toEqual(naive(list, m))
+          expect(monthSummary(list, GROUPS, 'me', m).totals).toEqual(naive(list, m))
         }
       }),
     )
@@ -116,7 +125,7 @@ describe('monthSummary properties', () => {
     fc.assert(
       fc.property(entries, (list) => {
         for (const m of MONTHS) {
-          const { totals, byGroup } = monthSummary(list, 'me', m)
+          const { totals, byGroup } = monthSummary(list, GROUPS, 'me', m)
           for (const key of Object.keys(ZERO) as (keyof typeof ZERO)[]) {
             expect(sum(byGroup.map((g) => g[key]))).toBe(totals[key])
           }
@@ -135,7 +144,7 @@ describe('monthSummary properties', () => {
           { ...e, id: `m-${e.id}`, date: `2026-11${e.date.slice(7)}` },
           ...(e.date.startsWith(m) ? [] : [{ ...e, id: `o-${e.id}` }]),
         ])
-        expect(monthSummary([...outside, ...list], 'me', m)).toEqual(monthSummary(list, 'me', m))
+        expect(monthSummary([...outside, ...list], GROUPS, 'me', m)).toEqual(monthSummary(list, GROUPS, 'me', m))
       }),
     )
   })

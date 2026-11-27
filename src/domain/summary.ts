@@ -1,6 +1,6 @@
 // สรุปเดือน: what happened to my money in one month.
 import { entriesByGroup } from './ledger'
-import type { Entry, PersonId, Satang } from './types'
+import type { Entry, Group, PersonId, Satang } from './types'
 
 export interface MonthFigures {
   /** ส่วนที่เรากินจริง: my `owed` in bills. */
@@ -43,13 +43,18 @@ function figuresFor(entries: readonly Entry[], meId: PersonId): MonthFigures {
 }
 
 /** `month` is `YYYY-MM`. */
-export function monthSummary(entries: readonly Entry[], meId: PersonId, month: string): MonthSummary {
+export function monthSummary(
+  entries: readonly Entry[],
+  groups: readonly Group[],
+  meId: PersonId,
+  month: string,
+): MonthSummary {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new RangeError(`invalid month: ${month}`)
   const inMonth = entries.filter((e) => e.date.startsWith(`${month}-`))
   return {
     month,
     totals: figuresFor(inMonth, meId),
-    byGroup: entriesByGroup(inMonth)
+    byGroup: entriesByGroup(inMonth, groups)
       .map(({ groupId, entries: list }) => ({ groupId, ...figuresFor(list, meId) }))
       .filter((g) => g.myShare || g.cashOut || g.lent || g.repaidToMe),
   }

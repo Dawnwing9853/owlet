@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { computeBill } from '../domain/split'
-import { validBillDraft } from '../domain/testing/arbitraries'
+import { PEOPLE, validBillDraft } from '../domain/testing/arbitraries'
 import { newId } from './ids'
 import { STORAGE_KEY, createRepository, type BillInput, type KeyValueStore } from './repository'
 
@@ -35,8 +35,20 @@ const input = (over: Partial<BillInput> = {}): BillInput => ({
   ...over,
 })
 
-function setup(initial?: string) {
+/** A saved store containing these people besides me. */
+function storeWith(...ids: string[]) {
+  const people = ['me', ...ids].map((id) => ({ id, name: id, isMe: id === 'me' }))
+  return JSON.stringify({ data: { people, groups: [], entries: [], settings: { schemaVersion: 1 } } })
+}
+
+function setup(initial: string = storeWith('p-1')) {
   const fake = fakeStore(initial)
+  return { ...fake, repo: createRepository(fake.store) }
+}
+
+/** Nothing stored yet, as on a new phone. */
+function blank() {
+  const fake = fakeStore()
   return { ...fake, repo: createRepository(fake.store) }
 }
 
@@ -48,7 +60,7 @@ function loaded(repo: ReturnType<typeof createRepository>) {
 
 describe('first run', () => {
   it('saves starting data with only me, once', () => {
-    const { repo, state } = setup()
+    const { repo, state } = blank()
     expect(repo.initialize()).toMatchObject({ status: 'ok', firstRun: true })
     expect(repo.initialize()).toMatchObject({ status: 'ok', firstRun: false })
     expect(state.writes).toBe(1)
@@ -56,7 +68,7 @@ describe('first run', () => {
   })
 
   it('does not write while only loading', () => {
-    const { repo, state } = setup()
+    const { repo, state } = blank()
     repo.load()
     expect(state.writes).toBe(0)
   })
@@ -88,6 +100,29 @@ describe('saveBill', () => {
     const list = loaded(repo).data.entries
     expect(list).toHaveLength(2)
     expect(list[0]).toMatchObject({ id: first.value.id, servicePct: 10, owed: { me: 5528, 'p-1': 5527 } })
+  })
+
+  it('refuses people who do not exist, writing nothing', () => {
+    const { repo, state } = setup()
+    const items = [{ id: 'i1', name: 'หมู', price: 10050, sharedBy: ['me', 'p-1', 'p-ghost'] }]
+    expect(repo.saveBill(input({ items }))).toEqual({
+      ok: false,
+      reason: 'unknown-person',
+      personIds: ['p-ghost'],
+    })
+    expect(repo.saveBill(input({ payers: { me: 10000, 'p-other': 50 } }))).toMatchObject({
+      reason: 'unknown-person',
+      personIds: ['p-other'],
+    })
+    expect(state.writes).toBe(0)
+  })
+
+  it('keeps a groupId it does not know when a bill is edited', () => {
+    const { repo } = setup()
+    const first = repo.saveBill(input({ groupId: 'gone' }))
+    if (!first.ok) throw new Error(first.reason)
+    repo.saveBill(input({ id: first.value.id, groupId: first.value.groupId, title: 'edited' }))
+    expect(loaded(repo).data.entries).toMatchObject([{ title: 'edited', groupId: 'gone' }])
   })
 
   it('refuses a bill that finalizeBill refuses, writing nothing', () => {
@@ -131,7 +166,7 @@ describe('saveBill', () => {
   it('never saves a bill that loading would set aside', () => {
     fc.assert(
       fc.property(validBillDraft, (draft) => {
-        const { repo } = setup()
+        const { repo } = setup(storeWith(...PEOPLE.filter((id) => id !== 'me')))
         const saved = repo.saveBill({ ...draft, title: 't', date: '2026-01-01' })
         expect(saved.ok).toBe(true)
         const result = loaded(repo)
@@ -159,7 +194,7 @@ describe('delete and friends', () => {
     if (!added.ok) throw new Error(added.reason)
     expect(added.value).toMatchObject({ name: 'ต้น', isMe: false })
     expect(added.value.id > 'me').toBe(true)
-    expect(loaded(repo).data.people.map((p) => p.name)).toEqual(['เรา', 'ต้น'])
+    expect(loaded(repo).data.people.map((p) => p.name)).toEqual(['me', 'p-1', 'ต้น'])
   })
 
   it('refuses a blank name', () => {
@@ -184,7 +219,12 @@ describe('delete and friends', () => {
 describe('quarantined records', () => {
   const bad = { kind: 'bill', id: 'bad', title: 'ชาบู', date: 'nope', anything: [1, 2] }
   const stored = JSON.stringify({
-    data: { people: [], groups: [], entries: [bad], settings: { schemaVersion: 1 } },
+    data: {
+      people: [{ id: 'p-1', name: 'p-1', isMe: false }],
+      groups: [],
+      entries: [bad],
+      settings: { schemaVersion: 1 },
+    },
   })
 
   it('keep their raw data through later saves', () => {
@@ -197,6 +237,22 @@ describe('quarantined records', () => {
     expect(result.quarantine).toHaveLength(1)
     expect(result.quarantine[0]!.raw).toEqual(bad)
     expect(JSON.parse(raw()!).quarantine).toHaveLength(1)
+  })
+
+  it('stores a recreated person on the next save, once', () => {
+    const loan = { kind: 'loan', id: 'l', date: '2026-11-01', lenderId: 'me', borrowerId: 'p-gone', amount: 5 }
+    const { repo } = setup(
+      JSON.stringify({
+        data: { people: [{ id: 'p-1', name: 'p-1', isMe: false }], groups: [], entries: [loan], settings: { schemaVersion: 1 } },
+      }),
+    )
+    expect(repo.saveBill(input())).toMatchObject({ ok: true })
+    repo.saveBill(input({ title: 'second' }))
+    const { data, quarantine } = loaded(repo)
+    expect(data.people.filter((p) => p.id === 'p-gone')).toEqual([
+      { id: 'p-gone', name: '(ไม่ทราบชื่อ)', isMe: false, needsName: true },
+    ])
+    expect(quarantine).toEqual([])
   })
 
   it('are not touched by just loading', () => {
@@ -232,7 +288,7 @@ describe('a store that cannot be used', () => {
   })
 
   it('has nothing to export before the first run', () => {
-    expect(setup().repo.exportRaw()).toBe('')
+    expect(blank().repo.exportRaw()).toBe('')
   })
 
   it('can be reset', () => {

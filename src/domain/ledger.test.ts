@@ -4,6 +4,7 @@ import {
   debtsByGroup,
   entryDebts,
   entryNets,
+  entryPersonIds,
   groupDebts,
   myBalances,
   netBalances,
@@ -61,6 +62,9 @@ const group = (simplify: boolean): Group => ({
   simplify,
 })
 
+const known = (...ids: string[]): Group[] =>
+  ids.map((id) => ({ id, name: id, memberIds: [], createdAt: 0 }))
+
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)
 
 describe('one entry', () => {
@@ -103,6 +107,22 @@ describe('one entry', () => {
 
   it('refuses a bill snapshot that does not balance', () => {
     expect(() => entryDebts(bill({ a: 100 }, { b: 99 }))).toThrow(RangeError)
+  })
+})
+
+describe('entryPersonIds', () => {
+  it('lists everyone a bill points at, once each', () => {
+    const withItems = {
+      ...bill({ payer: 100 }, { eater: 100 }),
+      items: [{ id: 'i', name: 'x', price: 100, sharedBy: ['sharer', 'eater'] }],
+    }
+    expect(entryPersonIds(withItems).sort()).toEqual(['eater', 'payer', 'sharer'])
+  })
+
+  it('lists both sides of a loan and a repayment', () => {
+    expect(entryPersonIds(loan('a', 'b', 1))).toEqual(['a', 'b'])
+    expect(entryPersonIds(repay('c', 'd', 1))).toEqual(['c', 'd'])
+    expect(entryPersonIds(loan('a', 'a', 1))).toEqual(['a'])
   })
 })
 
@@ -172,7 +192,17 @@ describe('simplify', () => {
 describe('debtsByGroup', () => {
   it('lists groups in id order with ungrouped entries last', () => {
     const list = [loan('me', 'ton', 1), loan('me', 'ton', 2, 'b'), loan('me', 'ton', 3, 'a'), loan('me', 'ton', 4)]
-    expect(debtsByGroup(list, []).map((g) => g.groupId)).toEqual(['a', 'b', null])
+    expect(debtsByGroup(list, known('a', 'b')).map((g) => g.groupId)).toEqual(['a', 'b', null])
+  })
+
+  it('counts a group that does not exist as no group, without changing the entry', () => {
+    const list = [loan('me', 'ton', 500, 'gone'), loan('me', 'ton', 200), loan('me', 'ton', 100, 'a')]
+    expect(debtsByGroup(list, known('a')).map((g) => g.groupId)).toEqual(['a', null])
+    expect(myBalances(list, known('a'), 'me').people[0]!.byGroup).toEqual([
+      { groupId: 'a', net: 100 },
+      { groupId: null, net: 700 },
+    ])
+    expect(list[0]!.groupId).toBe('gone')
   })
 
   it.each([
@@ -182,7 +212,7 @@ describe('debtsByGroup', () => {
     [[undefined, 'a', 'b']],
   ])('keeps that order when entries arrive as %j', (order) => {
     const list = order.map((groupId, i) => loan('me', 'ton', i + 1, groupId))
-    expect(debtsByGroup(list, []).map((g) => g.groupId)).toEqual(['a', 'b', null])
+    expect(debtsByGroup(list, known('a', 'b')).map((g) => g.groupId)).toEqual(['a', 'b', null])
   })
 })
 
@@ -194,7 +224,7 @@ describe('myBalances', () => {
       loan('mew', 'me', 4000),
       loan('ton', 'mew', 777), // not about me
     ]
-    expect(myBalances(list, [], 'me')).toEqual({
+    expect(myBalances(list, known('trip'), 'me')).toEqual({
       owedToMe: 30000,
       iOwe: 4000,
       people: [
@@ -212,7 +242,7 @@ describe('myBalances', () => {
   })
 
   it('keeps a person who nets to zero overall but not within each group', () => {
-    const result = myBalances([loan('me', 'ton', 500, 'trip'), loan('ton', 'me', 500)], [], 'me')
+    const result = myBalances([loan('me', 'ton', 500, 'trip'), loan('ton', 'me', 500)], known('trip'), 'me')
     expect(result).toMatchObject({ owedToMe: 0, iOwe: 0 })
     expect(result.people).toEqual([
       {

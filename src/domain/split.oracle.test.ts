@@ -83,6 +83,20 @@ describe('each owed amount against exact arithmetic', () => {
     )
   })
 
+  // The common case, held much tighter. With no service or VAT, each of the n item
+  // splits is off by less than 1 satang and the discount split by less than 1
+  // more, so the gap is less than n+1.
+  it('is within items+1 satang when there is no service charge or VAT', () => {
+    const plain = validBillDraft.map((draft) => ({ ...draft, servicePct: 0, vat: false }))
+    fc.assert(
+      fc.property(plain, (draft) => {
+        const limit = BigInt(draft.items.length + 1)
+        for (const gap of gaps(draft)) expect(within(gap, limit)).toBe(true)
+      }),
+      { numRuns: 2000 },
+    )
+  })
+
   // Worst cases: 1 satang is left over on every item, always for the same person.
   // They show why a tolerance of "items + 4" would be too tight.
   it.each([

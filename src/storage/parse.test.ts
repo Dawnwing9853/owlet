@@ -1,9 +1,16 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { netBalances, overallDebts } from '../domain/ledger'
+import {
+  entryPersonIds,
+  groupDebts,
+  myBalances,
+  netBalances,
+  overallDebts,
+  pairwiseDebts,
+} from '../domain/ledger'
 import { monthSummary } from '../domain/summary'
 import { MONTHS, PEOPLE, entries, groups } from '../domain/testing/arbitraries'
-import { describeQuarantined } from './messages'
+import { describeQuarantined, quarantineNotice } from './messages'
 import { migrate } from './migrations'
 import { emptyData, parseStore, type AppData, type ParseResult } from './parse'
 import { SCHEMA_VERSION } from './schema'
@@ -36,7 +43,7 @@ function ok(result: ParseResult) {
 function deriveEverything(data: AppData) {
   netBalances(data.entries)
   overallDebts(data.entries, data.groups)
-  for (const month of MONTHS) monthSummary(data.entries, 'me', month)
+  for (const month of MONTHS) monthSummary(data.entries, data.groups, 'me', month)
 }
 
 describe('a corrupted bill', () => {
@@ -88,8 +95,9 @@ describe('other damaged records', () => {
 
   it('recreates my record under the same id if it is damaged', () => {
     const damaged = { id: 'me', name: '', isMe: true }
-    const result = ok(parseStore(store([goodBill], { people: [damaged] })))
-    expect(result.data.people).toEqual([{ id: 'me', name: 'เรา', isMe: true }])
+    const friend = { id: 'p1', name: 'p1', isMe: false }
+    const result = ok(parseStore(store([goodBill], { people: [damaged, friend] })))
+    expect(result.data.people).toEqual([{ id: 'me', name: 'เรา', isMe: true }, friend])
     expect(result.data.entries).toEqual([goodBill])
     expect(result.quarantine).toHaveLength(1)
   })
@@ -132,6 +140,126 @@ describe('other damaged records', () => {
     const earlier = { collection: 'entries', raw: { x: 1 }, problems: ['date'] }
     const result = ok(parseStore({ ...store([]), quarantine: [earlier, 'junk'] }))
     expect(result.quarantine).toEqual([earlier, { collection: 'entries', raw: 'junk', problems: ['shape'] }])
+  })
+})
+
+describe('references to people and groups that are missing', () => {
+  const me = { id: 'me', name: 'เรา', isMe: true }
+  const toGhost = { kind: 'loan', id: 'l', date: '2026-11-27', lenderId: 'me', borrowerId: 'ghost', amount: 570 }
+  const unknown = (id: string) => ({ id, name: '(ไม่ทราบชื่อ)', isMe: false, needsName: true })
+
+  it('recreates a missing person under the same id and keeps the money', () => {
+    const result = ok(parseStore(store([toGhost], { people: [me] })))
+    expect(result.data.people).toEqual([me, unknown('ghost')])
+    expect(result.data.entries).toEqual([toGhost])
+    expect(result.quarantine).toEqual([])
+    expect(netBalances(result.data.entries)).toEqual({ ghost: -570, me: 570 })
+  })
+
+  it('finds missing people in every place a bill or a group can name them', () => {
+    const bill = {
+      ...goodBill,
+      items: [{ id: 'i1', name: 'x', price: 100, sharedBy: ['in-items'] }],
+      payers: { 'in-payers': 100 },
+      owed: { 'in-owed': 100 },
+    }
+    const back = { kind: 'repay', id: 'r', date: '2026-11-27', fromId: 'from', toId: 'to', amount: 1 }
+    const group = { id: 'g', name: 'g', memberIds: ['member'], createdAt: 0 }
+    const result = ok(parseStore(store([bill, back], { people: [me], groups: [group] })))
+    expect(result.data.people.slice(1)).toEqual(
+      ['from', 'in-items', 'in-owed', 'in-payers', 'member', 'to'].map(unknown),
+    )
+  })
+
+  it('reuses the name from a quarantined record of that person', () => {
+    const damaged = { id: 'ghost', name: '  ต้น  ' } // no isMe, so it is quarantined
+    const result = ok(parseStore(store([toGhost], { people: [me, damaged] })))
+    expect(result.data.people).toEqual([me, { id: 'ghost', name: 'ต้น', isMe: false }])
+    expect(result.quarantine).toEqual([{ collection: 'people', raw: damaged, problems: ['shape'] }])
+  })
+
+  it('reuses a name quarantined by an earlier load', () => {
+    const earlier = { collection: 'people', raw: { id: 'ghost', name: 'มิว' }, problems: ['shape'] }
+    const result = ok(parseStore({ ...store([toGhost], { people: [me] }), quarantine: [earlier] }))
+    expect(result.data.people[1]).toEqual({ id: 'ghost', name: 'มิว', isMe: false })
+  })
+
+  it.each([
+    [{ id: 'ghost' }],
+    [{ id: 'ghost', name: '   ' }],
+    [{ id: 'ghost', name: 5 }],
+    [{ id: 'someone else', name: 'ต้น' }],
+  ])('asks for a name when the quarantined record %j has no usable one', (damaged) => {
+    const result = ok(parseStore(store([toGhost], { people: [me, damaged] })))
+    expect(result.data.people[1]).toEqual(unknown('ghost'))
+  })
+
+  it('keeps an unknown groupId exactly as stored', () => {
+    const lost = { ...toGhost, groupId: 'gone' }
+    const result = ok(parseStore(store([lost], { people: [me] })))
+    expect(result.data.entries).toEqual([lost])
+    expect(result.data.groups).toEqual([])
+  })
+
+  it('does not invent people for entries that are quarantined', () => {
+    const broken = { ...toGhost, date: 'nope' }
+    expect(ok(parseStore(store([broken], { people: [me] }))).data.people).toEqual([me])
+  })
+
+  it('gives every id the ledger can return a person record, and loses no money', () => {
+    const damaged = fc.record({
+      list: entries,
+      groupList: groups,
+      keep: fc.array(fc.constantFrom('good', 'missing', 'broken', 'broken-with-name'), {
+        minLength: PEOPLE.length,
+        maxLength: PEOPLE.length,
+      }),
+      dropGroups: fc.boolean(),
+    })
+    fc.assert(
+      fc.property(damaged, ({ list, groupList, keep, dropGroups }) => {
+        const storedPeople = people.flatMap((person, i): unknown[] => {
+          if (keep[i] === 'missing') return []
+          if (keep[i] === 'broken') return [{ id: person.id }]
+          if (keep[i] === 'broken-with-name') return [{ id: person.id, name: person.name }]
+          return [person]
+        })
+        const stored = JSON.parse(
+          JSON.stringify(store(list, { people: storedPeople, groups: dropGroups ? [] : groupList })),
+        ) as unknown
+        const { data } = ok(parseStore(stored))
+        const ids = new Set(data.people.map((p) => p.id))
+
+        const returned = [
+          ...Object.keys(netBalances(data.entries)),
+          ...[...overallDebts(data.entries, data.groups), ...pairwiseDebts(data.entries)].flatMap((d) => [d.from, d.to]),
+          ...data.groups.flatMap((g) => groupDebts(data.entries, g).flatMap((d) => [d.from, d.to])),
+          ...myBalances(data.entries, data.groups, 'me').people.map((p) => p.personId),
+          ...data.entries.flatMap(entryPersonIds),
+          ...data.groups.flatMap((g) => g.memberIds),
+        ]
+        expect(returned.filter((id) => !ids.has(id))).toEqual([])
+        expect(ids.size).toBe(data.people.length)
+        expect(netBalances(data.entries)).toEqual(netBalances(list))
+      }),
+      { numRuns: 300 },
+    )
+  })
+})
+
+describe('the banner for unreadable records', () => {
+  it('is not shown when everything loaded', () => {
+    expect(quarantineNotice([])).toBeNull()
+  })
+
+  it('counts every quarantined record and describes each one', () => {
+    const bad = { ...goodBill, id: 'bad', title: 'ชาบู', date: 'x' }
+    const result = ok(parseStore(store([bad, goodBill], { groups: [{ id: 'g' }] })))
+    expect(result.quarantine).toHaveLength(2)
+    expect(quarantineNotice(result.quarantine)).toEqual({
+      message: 'มี 2 รายการที่อ่านไม่ได้ ยอดอาจไม่ครบ',
+      details: result.quarantine.map(describeQuarantined),
+    })
   })
 })
 

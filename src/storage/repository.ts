@@ -1,6 +1,7 @@
 // The only code that reads or writes localStorage.
+import { entryPersonIds } from '../domain/ledger'
 import { finalizeBill, type BillIssue } from '../domain/split'
-import type { Bill, Person } from '../domain/types'
+import type { Bill, Person, PersonId } from '../domain/types'
 import { newId } from './ids'
 import { emptyData, parseStore, type AppData, type Quarantined } from './parse'
 import { entrySchema, personSchema, problemsOf, type Problem } from './schema'
@@ -20,6 +21,7 @@ export type BillInput = Omit<Bill, 'kind' | 'id' | 'owed'> & { id?: string }
 export type SaveFailure =
   | { ok: false; reason: 'invalid-bill'; issues: BillIssue[] }
   | { ok: false; reason: 'invalid-data'; problems: Problem[] }
+  | { ok: false; reason: 'unknown-person'; personIds: PersonId[] }
   | { ok: false; reason: 'store-unavailable' }
   | { ok: false; reason: 'write-failed' }
 
@@ -85,6 +87,12 @@ export function createRepository(store: KeyValueStore) {
       const bill = checked.data as Bill
 
       return update<Bill>((data) => {
+        // Only people who exist can be chosen. An unknown groupId is allowed, so
+        // that editing a bill never drops what was stored.
+        const known = new Set(data.people.map((p) => p.id))
+        const personIds = entryPersonIds(bill).filter((id) => !known.has(id))
+        if (personIds.length > 0) return { ok: false, reason: 'unknown-person', personIds }
+
         const index = data.entries.findIndex((e) => e.id === bill.id)
         if (index >= 0 && data.entries[index]!.kind !== 'bill') {
           return { ok: false, reason: 'invalid-data', problems: ['duplicate-id'] }

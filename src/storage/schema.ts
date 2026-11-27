@@ -69,7 +69,14 @@ const repay = z.object({
 export const entrySchema = z.discriminatedUnion('kind', [bill, loan, repay]) satisfies z.ZodType<Entry>
 
 export const personSchema = z
-  .object({ id, name: z.string().min(1), isMe: z.boolean(), archived: z.boolean().optional() })
+  .object({
+    id,
+    name: z.string().min(1),
+    isMe: z.boolean(),
+    archived: z.boolean().optional(),
+    // Only a hint for the UI. A bad value must never quarantine a person.
+    needsName: z.boolean().optional().catch(undefined),
+  })
   .refine((p) => p.isMe === (p.id === ME_ID), fail('me')) satisfies z.ZodType<Person>
 
 export const groupSchema = z.object({
