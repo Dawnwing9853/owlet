@@ -10,12 +10,10 @@ This folder already contains files (this spec, git). **Never delete or overwrite
 
 ---
 
-## Setup before P1 (I run these myself, then start you)
-```bash
-npx skills add pbakaus/impeccable --skill impeccable --agent claude-code   # design skill: /impeccable <command>
-claude mcp add playwright npx @playwright/mcp@latest                       # lets you open the dev server and take screenshots
-claude plugin marketplace add 0design/unslop-skill && claude plugin install unslop@unslop   # independent AI-slop auditor (audit only, needs Node 20+)
-```
+## Setup before P1 (already done in this repo)
+- Impeccable skill: installed in `.claude/skills/impeccable` (project-level, committed). Use it as `/impeccable <command>`.
+- Playwright MCP: configured in `.mcp.json` (project scope). Approve it when Claude Code asks.
+- unslop auditor plugin: I install it inside Claude Code with `/plugin marketplace add 0design/unslop-skill` then `/plugin install unslop@unslop`.
 If `/impeccable` or Playwright is missing when you start, tell me — don't fake the UI review steps.
 Do NOT also install Anthropic's `frontend-design` plugin: it overlaps with Impeccable and the two give conflicting instructions.
 
