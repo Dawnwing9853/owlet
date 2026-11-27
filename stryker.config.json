@@ -5,7 +5,7 @@
   "plugins": ["@stryker-mutator/vitest-runner"],
   "coverageAnalysis": "perTest",
   "timeoutMS": 60000,
-  "mutate": ["src/domain/**/*.ts", "!src/domain/**/*.test.ts", "!src/domain/testing/**"],
+  "mutate": ["src/domain/**/*.ts", "src/storage/**/*.ts", "!src/**/*.test.ts", "!src/domain/testing/**"],
   "reporters": ["clear-text", "json", "html"],
   "ignorePatterns": [".claude", "docs", "dist", "coverage", ".playwright-mcp", ".impeccable"],
   "tempDirName": ".stryker-tmp"

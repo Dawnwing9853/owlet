@@ -67,7 +67,11 @@ describe('monthSummary', () => {
   })
 
   it('leaves out groups with nothing of mine', () => {
-    const others = [bill('2026-11-05', { ton: 100 }, { mew: 100 }, 'other'), loan('2026-11-05', 'me', 'me', 50)]
+    const others = [
+      bill('2026-11-05', { ton: 100 }, { mew: 100 }, 'other'),
+      loan('2026-11-05', 'me', 'me', 50),
+      repay('2026-11-05', 'me', 'me', 60),
+    ]
     expect(monthSummary(others, GROUPS, 'me', '2026-11')).toEqual({ month: '2026-11', totals: ZERO, byGroup: [] })
   })
 

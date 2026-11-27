@@ -1,6 +1,7 @@
 // One set of checks for everything that comes from outside the app: what is
 // loaded from localStorage now, and imported files in Phase 5.
 import { z } from 'zod'
+import { PERSON_COLOR_SLOTS } from '../domain/colors'
 import { isCalendarDate } from '../domain/date'
 import { isAmount } from '../domain/money'
 import { parsePromptPayId } from '../domain/promptpay'
@@ -74,8 +75,15 @@ export const personSchema = z
     name: z.string().min(1),
     isMe: z.boolean(),
     archived: z.boolean().optional(),
-    // Only a hint for the UI. A bad value must never quarantine a person.
+    // Hints for the UI. A bad value must never quarantine a person.
     needsName: z.boolean().optional().catch(undefined),
+    colorSlot: z
+      .number()
+      .int()
+      .min(0)
+      .max(PERSON_COLOR_SLOTS - 1)
+      .optional()
+      .catch(undefined),
   })
   .refine((p) => p.isMe === (p.id === ME_ID), fail('me')) satisfies z.ZodType<Person>
 

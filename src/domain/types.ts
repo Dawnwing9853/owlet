@@ -12,6 +12,8 @@ export interface Person {
   archived?: boolean
   /** Set when the record had to be recreated without a name, so it can be renamed. */
   needsName?: boolean
+  /** Chip colour, 0-29. A slot number, never a colour value. See colors.ts. */
+  colorSlot?: number
 }
 
 export interface Group {

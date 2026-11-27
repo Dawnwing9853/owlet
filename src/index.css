@@ -2,4 +2,71 @@
 
 :root {
   color-scheme: light;
+
+  /*
+   * Person colours: 15 hues × 2 styles. Slots 0-14 are soft chips, 15-29 solid.
+   * People store the slot number only, so these can change later.
+   * Hues next to debt rust and paid olive are left out on purpose.
+   * Never use them for amounts or status.
+   */
+  --person-0-bg: #FFE1C7;
+  --person-0-fg: #673200;
+  --person-1-bg: #FAE5C3;
+  --person-1-fg: #5E3A00;
+  --person-2-bg: #EFE9C3;
+  --person-2-fg: #4F4200;
+  --person-3-bg: #CFF2DA;
+  --person-3-fg: #005129;
+  --person-4-bg: #C6F3E6;
+  --person-4-fg: #00533F;
+  --person-5-bg: #C2F3F2;
+  --person-5-fg: #005153;
+  --person-6-bg: #C3F1FD;
+  --person-6-fg: #004E63;
+  --person-7-bg: #C9EEFF;
+  --person-7-fg: #00496F;
+  --person-8-bg: #D2EAFF;
+  --person-8-fg: #174276;
+  --person-9-bg: #DEE6FF;
+  --person-9-fg: #343C77;
+  --person-10-bg: #EAE2FF;
+  --person-10-fg: #473571;
+  --person-11-bg: #F5DEFF;
+  --person-11-fg: #562F66;
+  --person-12-bg: #FEDCF5;
+  --person-12-fg: #612B57;
+  --person-13-bg: #FFDBE9;
+  --person-13-fg: #692845;
+  --person-14-bg: #FFDBE0;
+  --person-14-fg: #6D2736;
+  --person-15-bg: #864900;
+  --person-15-fg: #FFFFFF;
+  --person-16-bg: #7B5200;
+  --person-16-fg: #FFFFFF;
+  --person-17-bg: #6A5B00;
+  --person-17-fg: #FFFFFF;
+  --person-18-bg: #106C3E;
+  --person-18-fg: #FFFFFF;
+  --person-19-bg: #006E57;
+  --person-19-fg: #FFFFFF;
+  --person-20-bg: #006D6E;
+  --person-20-fg: #FFFFFF;
+  --person-21-bg: #006981;
+  --person-21-fg: #FFFFFF;
+  --person-22-bg: #00638F;
+  --person-22-fg: #FFFFFF;
+  --person-23-bg: #2B5C97;
+  --person-23-fg: #FFFFFF;
+  --person-24-bg: #4A5498;
+  --person-24-fg: #FFFFFF;
+  --person-25-bg: #604C91;
+  --person-25-fg: #FFFFFF;
+  --person-26-bg: #724685;
+  --person-26-fg: #FFFFFF;
+  --person-27-bg: #7F4073;
+  --person-27-fg: #FFFFFF;
+  --person-28-bg: #893D5E;
+  --person-28-fg: #FFFFFF;
+  --person-29-bg: #8D3D4D;
+  --person-29-fg: #FFFFFF;
 }

@@ -61,8 +61,8 @@ function loaded(repo: ReturnType<typeof createRepository>) {
 describe('first run', () => {
   it('saves starting data with only me, once', () => {
     const { repo, state } = blank()
-    expect(repo.initialize()).toMatchObject({ status: 'ok', firstRun: true })
-    expect(repo.initialize()).toMatchObject({ status: 'ok', firstRun: false })
+    expect(repo.initialize()).toMatchObject({ status: 'ok', firstRun: true, quarantine: [] })
+    expect(repo.initialize()).toMatchObject({ status: 'ok', firstRun: false, quarantine: [] })
     expect(state.writes).toBe(1)
     expect(loaded(repo).data.people).toEqual([{ id: 'me', name: 'เรา', isMe: true }])
   })
@@ -150,7 +150,11 @@ describe('saveBill', () => {
     const { repo } = setup(
       JSON.stringify({ data: { people: [], groups: [], entries: [loan], settings: { schemaVersion: 1 } } }),
     )
-    expect(repo.saveBill(input({ id: 'x' }))).toMatchObject({ ok: false, reason: 'invalid-data' })
+    expect(repo.saveBill(input({ id: 'x' }))).toEqual({
+      ok: false,
+      reason: 'invalid-data',
+      problems: ['duplicate-id'],
+    })
     expect(loaded(repo).data.entries).toEqual([loan])
   })
 
@@ -180,12 +184,30 @@ describe('saveBill', () => {
 })
 
 describe('delete and friends', () => {
-  it('deletes an entry', () => {
+  it('deletes only the entry asked for', () => {
+    const { repo } = setup()
+    const first = repo.saveBill(input())
+    const second = repo.saveBill(input({ title: 'second' }))
+    const third = repo.saveBill(input({ title: 'third' }))
+    if (!first.ok || !second.ok || !third.ok) throw new Error('save failed')
+    expect(repo.deleteEntry(second.value.id)).toMatchObject({ ok: true })
+    expect(loaded(repo).data.entries).toEqual([first.value, third.value])
+  })
+
+  it('changes nothing when asked to delete an unknown id', () => {
     const { repo } = setup()
     const saved = repo.saveBill(input())
     if (!saved.ok) throw new Error(saved.reason)
-    expect(repo.deleteEntry(saved.value.id)).toMatchObject({ ok: true })
-    expect(loaded(repo).data.entries).toEqual([])
+    repo.deleteEntry('b-nope')
+    expect(loaded(repo).data.entries).toEqual([saved.value])
+  })
+
+  it('gives a new bill its own kind of id, under the one storage key', () => {
+    const { repo } = setup()
+    const saved = repo.saveBill(input())
+    expect(saved.ok && saved.value.id).toMatch(/^b-[0-9a-f]{24}$/)
+    // Renaming the key would make every saved bill vanish.
+    expect(STORAGE_KEY).toBe('owlet:data')
   })
 
   it('adds a friend with a trimmed name and an id that sorts after "me"', () => {
@@ -202,6 +224,34 @@ describe('delete and friends', () => {
     expect(repo.addPerson('   ')).toMatchObject({ ok: false, reason: 'invalid-data' })
   })
 
+  it('stores a colour slot chosen when the friend is added', () => {
+    const fake = fakeStore()
+    const repo = createRepository(fake.store, () => 0)
+    for (let i = 0; i < 31; i += 1) repo.addPerson(`f${i}`)
+    const slots = loaded(repo).data.people.filter((p) => !p.isMe).map((p) => p.colorSlot)
+    expect(slots.slice(0, 30)).toEqual(Array.from({ length: 30 }, (_, i) => i))
+    expect(slots[30]).toBe(0)
+  })
+
+  it('renames a friend, keeping the colour and clearing the request for a name', () => {
+    const lost = { id: 'p-1', name: '(ไม่ทราบชื่อ)', isMe: false, needsName: true, colorSlot: 7 }
+    const { repo } = setup(
+      JSON.stringify({ data: { people: [lost], groups: [], entries: [], settings: { schemaVersion: 1 } } }),
+    )
+    expect(repo.renamePerson('p-1', '  ต้น ')).toMatchObject({ ok: true })
+    expect(loaded(repo).data.people[1]).toStrictEqual({ id: 'p-1', name: 'ต้น', isMe: false, colorSlot: 7 })
+  })
+
+  it.each([
+    ['a blank name', 'p-1', '  ', { reason: 'invalid-data', problems: ['shape'] }],
+    ['my own record', 'me', 'ชื่อใหม่', { reason: 'invalid-data', problems: ['me'] }],
+    ['someone who does not exist', 'p-nope', 'ต้น', { reason: 'unknown-person', personIds: ['p-nope'] }],
+  ])('refuses to rename with %s', (_, id, name, failure) => {
+    const { repo, state } = setup()
+    expect(repo.renamePerson(id, name)).toEqual({ ok: false, ...failure })
+    expect(state.writes).toBe(0)
+  })
+
   it('makes me, not a friend, take the leftover satang', () => {
     const friend = newId('p')
     const { people } = computeBill(
@@ -211,8 +261,10 @@ describe('delete and friends', () => {
     expect(people[friend]!.owed).toBe(50)
   })
 
-  it('makes ids that do not repeat', () => {
-    expect(new Set(Array.from({ length: 1000 }, () => newId('b'))).size).toBe(1000)
+  it('makes ids that do not repeat and always have the same shape', () => {
+    const made = Array.from({ length: 1000 }, () => newId('b'))
+    expect(new Set(made).size).toBe(1000)
+    expect(made.filter((id) => !/^b-[0-9a-f]{24}$/.test(id))).toEqual([])
   })
 })
 

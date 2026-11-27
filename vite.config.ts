@@ -7,6 +7,8 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   test: {
     include: ['src/**/*.test.ts'],
+    // Vitest empties CSS by default; the colour contrast test reads index.css.
+    css: { include: [/src\/index\.css/] },
     coverage: {
       provider: 'v8',
       include: ['src/domain/**/*.ts', 'src/storage/**/*.ts'],

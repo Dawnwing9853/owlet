@@ -102,6 +102,27 @@ describe('other damaged records', () => {
     expect(result.quarantine).toHaveLength(1)
   })
 
+  it('never quarantines a person over a decorative field', () => {
+    fc.assert(
+      fc.property(fc.jsonValue(), fc.jsonValue(), (colorSlot, needsName) => {
+        const friend = { id: 'p1', name: 'ต้น', isMe: false, colorSlot, needsName }
+        const result = ok(parseStore(store([], { people: [people[0], friend] })))
+        expect(result.quarantine).toEqual([])
+        const kept = result.data.people[1]!
+        expect(kept.name).toBe('ต้น')
+        const validSlot = Number.isInteger(colorSlot) && Number(colorSlot) >= 0 && Number(colorSlot) < 30
+        expect(kept.colorSlot).toBe(typeof colorSlot === 'number' && validSlot ? colorSlot : undefined)
+        expect(kept.needsName).toBe(typeof needsName === 'boolean' ? needsName : undefined)
+      }),
+      { numRuns: 300 },
+    )
+  })
+
+  it.each([0, 14, 15, 29])('keeps the valid colour slot %i', (colorSlot) => {
+    const friend = { id: 'p1', name: 'ต้น', isMe: false, colorSlot }
+    expect(ok(parseStore(store([], { people: [people[0], friend] }))).data.people[1]).toEqual(friend)
+  })
+
   it('does not let anyone else claim to be me', () => {
     const impostor = { id: 'p1', name: 'x', isMe: true }
     const result = ok(parseStore(store([], { people: [people[0], impostor] })))
@@ -125,6 +146,34 @@ describe('other damaged records', () => {
     const [kept] = ok(parseStore({ ...store([]), quarantine: [item] })).quarantine
     expect(kept).toMatchObject({ collection, problems })
     expect(kept!.raw).toEqual(item.collection === 'nowhere' ? item : 1)
+  })
+
+  it.each([[null], [7], ['junk'], [{ collection: 'people', note: 'no raw field' }]])(
+    'keeps the whole of a quarantine item without a raw value: %j',
+    (item) => {
+      const [kept] = ok(parseStore({ ...store([]), quarantine: [item] })).quarantine
+      expect(kept).toEqual({ collection: 'entries', raw: item, problems: ['shape'] })
+    },
+  )
+
+  it('keeps a valid PromptPay ID in the settings', () => {
+    const settings = { schemaVersion: SCHEMA_VERSION, myPromptPayId: '0801234567', lastBackupAt: 5 }
+    const result = ok(parseStore(store([], { settings })))
+    expect(result.data.settings).toEqual(settings)
+    expect(result.quarantine).toEqual([])
+  })
+
+  // These strings are what the owner reads on the banner.
+  it.each([
+    ['entries', { kind: 'bill', title: 'ชาบู', date: 'd' }, ['unbalanced'], 'บิล “ชาบู” d: ยอดคนจ่ายกับยอดที่หารไม่เท่ากัน'],
+    ['entries', { kind: 'loan' }, ['date', 'amount'], 'รายการยืม: วันที่ไม่ถูกต้อง, จำนวนเงินไม่ถูกต้อง'],
+    ['entries', { kind: 'repay' }, ['duplicate-id'], 'รายการคืนเงิน: ซ้ำกับรายการอื่น'],
+    ['entries', { kind: 'other', title: 5, name: 'ชื่อ' }, ['shape'], 'รายการ “ชื่อ”: ข้อมูลไม่ครบหรือผิดรูปแบบ'],
+    ['entries', { title: '', date: 7 }, ['shape'], 'รายการ: ข้อมูลไม่ครบหรือผิดรูปแบบ'],
+    ['people', { name: 'ต้น' }, ['me'], 'เพื่อน “ต้น”: ข้อมูลของเราไม่ถูกต้อง'],
+    ['groups', 'not an object', ['shape'], 'กลุ่ม: ข้อมูลไม่ครบหรือผิดรูปแบบ'],
+  ] as const)('describes a %s record %j', (collection, raw, problems, text) => {
+    expect(describeQuarantined({ collection, raw, problems: [...problems] })).toBe(text)
   })
 
   it('can still describe a record with nothing readable in it', () => {
@@ -191,6 +240,24 @@ describe('references to people and groups that are missing', () => {
     [{ id: 'someone else', name: 'ต้น' }],
   ])('asks for a name when the quarantined record %j has no usable one', (damaged) => {
     const result = ok(parseStore(store([toGhost], { people: [me, damaged] })))
+    expect(result.data.people[1]).toEqual(unknown('ghost'))
+  })
+
+  it('takes a name only from a quarantined person, never from another kind of record', () => {
+    // A damaged group and a damaged entry that happen to share the id.
+    const group = { id: 'ghost', name: 'ทริป' }
+    const entry = { id: 'ghost', name: 'ไม่ใช่คน', kind: 'loan' }
+    const result = ok(parseStore(store([toGhost, entry], { people: [me], groups: [group] })))
+    expect(result.quarantine).toHaveLength(2)
+    expect(result.data.people[1]).toEqual(unknown('ghost'))
+  })
+
+  it('copes with a quarantined person that is not even an object', () => {
+    const earlier = [
+      { collection: 'people', raw: null, problems: ['shape'] },
+      { collection: 'people', raw: 'ghost', problems: ['shape'] },
+    ]
+    const result = ok(parseStore({ ...store([toGhost], { people: [me] }), quarantine: earlier }))
     expect(result.data.people[1]).toEqual(unknown('ghost'))
   })
 
@@ -274,6 +341,8 @@ describe('a store that cannot be understood', () => {
     { data: { people: [], groups: [], entries: [] } },
     { data: { people: [], groups: [], entries: [], settings: {} } },
     { data: { people: [], groups: [], entries: [], settings: { schemaVersion: 0 } } },
+    { data: { people: [], groups: [], entries: [], settings: { schemaVersion: 1.5 } } },
+    { data: { people: [], groups: [], entries: [], settings: { schemaVersion: '1' } } },
     { data: { people: {}, groups: [], entries: [], settings: { schemaVersion: 1 } } },
     { ...store([]), quarantine: {} },
   ])('is unreadable: %j', (value) => {
@@ -362,6 +431,11 @@ describe('parse properties', () => {
   })
 
   it('starts empty with only me', () => {
-    expect(emptyData().people).toEqual([{ id: 'me', name: 'เรา', isMe: true }])
+    expect(emptyData()).toEqual({
+      people: [{ id: 'me', name: 'เรา', isMe: true }],
+      groups: [],
+      entries: [],
+      settings: { schemaVersion: SCHEMA_VERSION },
+    })
   })
 })

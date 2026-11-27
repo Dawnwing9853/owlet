@@ -45,7 +45,8 @@ src/ui/         shared components (Receipt, Chip, MoneyInput, BottomNav…)
 
 ## Data model
 ```ts
-Person   { id, name, isMe: boolean, archived?: boolean }
+Person   { id, name, isMe: boolean, archived?: boolean,
+           needsName?: boolean /*recreated without a name*/, colorSlot?: number /*0-29, never a hex value*/ }
 Group    { id, name, memberIds: string[], createdAt /*epoch ms*/, archived?: boolean, simplify?: boolean }
 BillItem { id, name, price: Satang, sharedBy: string[] }   // personIds
 Bill     { kind:'bill', id, title, date, groupId?: string,
@@ -93,7 +94,7 @@ Order, per person:
 2. **หารบิล**: title, optional group, participants (chips; add new friend inline), items (name, price, who shares — chips + "ทุกคน"), quick chips (อาหาร, เครื่องดื่ม, เบียร์, เหล้า, มิกเซอร์, น้ำแข็ง, ของหวาน), toggles: Service charge %, VAT 7%, ส่วนลด ฿. Payers section. Live **receipt preview** with per-person totals and per-item breakdown. Save → goes into ledger. Edit/delete from history.
 3. **กลุ่ม**: list, create, detail (members, entries, balances inside the group, simplify toggle, archive).
 4. **สรุปเดือน**: month picker; numbers + simple CSS/SVG bars: ส่วนที่เรากินจริง (my owed), เงินที่ควักออกไป (my `payers` amounts in bills + money lent), ให้ยืม / ได้คืน, breakdown by group.
-5. **ตั้งค่า**: friends (rename, archive — can't archive with non-zero balance), my PromptPay ID (after entering it, ask me to scan my own QR and check the payee name my bank app shows; P3), backup, history list.
+5. **ตั้งค่า**: friends (rename, archive — can't archive with non-zero balance), friend rename is built in P2 (archive comes later), my PromptPay ID (after entering it, ask me to scan my own QR and check the payee name my bank app shows; P3), backup, history list.
 
 ## Sharing
 - Text: copy to clipboard + LINE share link (check LINE's current share URL format). Text = title, total, each person's amount, my PromptPay.
@@ -107,6 +108,10 @@ Order, per person:
 - A bill can only be saved through the repository, which computes `owed` with `finalizeBill`.
 - An error boundary shows a recovery screen (export raw data, reset after confirming) instead of a blank page.
 - My own person record always has the id `me`.
+- Every person id in a bill (`items[].sharedBy`, `payers`, `owed`), loan, repayment and group `memberIds` must exist in `people`. If one is missing on load, recreate that person under the same id; never quarantine the money entry. Reuse the name from a quarantined record of that person if it has a usable one, otherwise use "(ไม่ทราบชื่อ)" with `needsName`, so it can be renamed in ตั้งค่า. A bill can only be saved with people who exist.
+- An unknown `groupId` counts as "ไม่มีกลุ่ม"; the stored value is kept.
+- While anything is quarantined, a permanent banner appears wherever money is shown: "มี X รายการที่อ่านไม่ได้ ยอดอาจไม่ครบ", with the details and a raw-data export. There is no way to delete quarantined records yet.
+- `colorSlot` and `needsName` are hints: an invalid value is dropped and never quarantines a person.
 - Export JSON `{ schemaVersion, exportedAt, data }`; Import: validate, show counts preview, confirm, replace.
 - Banner "ยังไม่ได้ backup มา X วัน" when lastBackupAt > 7 days (dismissable for a day).
 
@@ -134,6 +139,13 @@ Feed this into `/impeccable init` and `/impeccable shape`. Impeccable may refine
   - Result (P2): Mitr has no tabular figures. Noto Sans Thai digits all have the same width by default, so money columns line up with it. It is not a rounded face.
 - Mobile-first, 44px touch targets, 16px inputs (no iOS zoom), `inputmode="decimal"` for money, visible focus, safe-area insets, WCAG AA contrast.
 - No emoji icons in UI; use a small icon set (lucide-react).
+- **Person colours** (up to 30 friends), so big groups are easy to tell apart. 30 slots = 15 hues × 2 styles: 0-14 soft chips, 15-29 solid chips with white text. The values are CSS variables `--person-N-bg` / `--person-N-fg` in `src/index.css`, each pair tested at 6:1 or better.
+  - A new friend gets the slot used least among non-archived friends; ties prefer soft slots, then random. Colours are never picked while drawing. A missing or invalid slot falls back to `hash(id) % 30`.
+  - Chips have a thin border of the same hue, in the item "who shares" picker, the payers section and person lists. The name is always shown: past about 15 colours some look alike, so the name identifies the person.
+  - Me is not a slot: an owl-brown chip labelled "เรา".
+  - Never use person colours for amounts or status, or debt rust or paid olive for people. Slots 15, 18, 29 and 14 are the risky ones (near owl brown, paid and rust): check screenshots at 375px.
+  - The shared receipt stays black and white (thermal look) for now.
+- **Person names are at least 16px everywhere.**
 
 ## UI/UX workflow with skills
 Impeccable's command set changes between versions: run `/impeccable` alone first to see the list, and if a command below is missing, use the closest one and tell me.
@@ -175,6 +187,10 @@ Save each report as `docs/reports/phase-N.md` with screenshots in `docs/screensh
 - Save this spec as `docs/SPEC.md` in the repo on the first step. Add a short `CLAUDE.md` that points to `docs/SPEC.md`, `PRODUCT.md`, `DESIGN.md` and the latest report, so a new session picks up where the last one stopped.
 - When I change a decision (here or in another chat), update `docs/SPEC.md` in the same commit as the code. Keep a `## Decision log` at the bottom of it: date · decision · reason.
 
+## Notes for later phases
+- P3: `newId` only makes `p` / `b` / `i` ids; loans and repayments need their own.
+- P3: an invalid `myPromptPayId` quarantines the whole settings object and loses `lastBackupAt` too. Quarantine only the bad field.
+
 ## Non-goals (don't build)
 Accounts/login, backend, multi-user sync, multiple currencies, receipt OCR, notifications, percentage/share-based splits.
 
@@ -202,3 +218,11 @@ Accounts/login, backend, multi-user sync, multiple currencies, receipt OCR, noti
 | 2026-11-27 | Bills are mostly entered at home later; 9+ people and mixed splits are typical. Completeness and checking against the receipt come before speed. One-handed table use stays supported. | Owner's answers to `/impeccable init`; they differed from the original brief. |
 | 2026-11-27 | Fonts are Mitr + Noto Sans Thai: Mitr for all text, Noto Sans Thai for money amounts. | Owner chose "Mitr + Noto Sans Thai" instead of the proposed Rubik. The owner confirmed which font does what. |
 | 2026-11-27 | Friend ids start with `p-`, which sorts after `me`, so when a split ties the leftover satang goes to me. | Agent choice in P2: with the smaller-id tie rule, other id formats would always charge a friend. |
+| 2026-11-27 | Owner reaffirmed: at the end of every phase, run all tests, commit, push to `origin main`, then stop for the owner's OK. | Phase 2 review. |
+| 2026-11-27 | Mid-phase backups go to the `p2-wip` branch, made without switching branches. Only commits with passing tests, scanned for personal data first. | Owner approved; unfinished work existed on one laptop only. |
+| 2026-11-27 | Commits use the GitHub noreply address, set for this repository only. Earlier commits are left as they are. | Owner choice. |
+| 2026-11-27 | Missing people are recreated on load; an unknown `groupId` counts as no group; a bill can only be saved with people who exist. | Phase 2 review: dangling ids loaded silently and showed up in balances. |
+| 2026-11-27 | A permanent banner shows while anything is quarantined, with no delete button. | Phase 2 review, owner choice: a quarantined bill drops out of balances. |
+| 2026-11-27 | Friend rename is built in P2. | Owner choice: recreated people need a name. |
+| 2026-11-27 | Each friend has a stored colour slot (30 slots); names are at least 16px. | Owner request: tell people apart in big groups. |
+| 2026-11-27 | Both fonts are self-hosted with only the Thai and Latin subsets. | Phase 2 review: the app must work offline. |

@@ -1,10 +1,11 @@
 // The only code that reads or writes localStorage.
+import { pickColorSlot } from '../domain/colors'
 import { entryPersonIds } from '../domain/ledger'
 import { finalizeBill, type BillIssue } from '../domain/split'
 import type { Bill, Person, PersonId } from '../domain/types'
 import { newId } from './ids'
 import { emptyData, parseStore, type AppData, type Quarantined } from './parse'
-import { entrySchema, personSchema, problemsOf, type Problem } from './schema'
+import { ME_ID, entrySchema, personSchema, problemsOf, type Problem } from './schema'
 
 export const STORAGE_KEY = 'owlet:data'
 
@@ -27,7 +28,8 @@ export type SaveFailure =
 
 export type SaveResult<T> = { ok: true; value: T; data: AppData } | SaveFailure
 
-export function createRepository(store: KeyValueStore) {
+/** `random` only breaks ties between equally used person colours. */
+export function createRepository(store: KeyValueStore, random: () => number = Math.random) {
   function load(): LoadResult {
     let raw: string | null
     try {
@@ -112,10 +114,24 @@ export function createRepository(store: KeyValueStore) {
     addPerson(name: string): SaveResult<Person> {
       const checked = personSchema.safeParse({ id: newId('p'), name: name.trim(), isMe: false })
       if (!checked.success) return { ok: false, reason: 'invalid-data', problems: problemsOf(checked.error) }
-      return update((data) => ({
-        data: { ...data, people: [...data.people, checked.data] },
-        value: checked.data,
-      }))
+      return update((data) => {
+        // The colour is chosen once and stored, never picked while drawing.
+        const person: Person = { ...checked.data, colorSlot: pickColorSlot(data.people, random) }
+        return { data: { ...data, people: [...data.people, person] }, value: person }
+      })
+    },
+
+    /** Renames a friend and clears `needsName`. My own record can't be renamed. */
+    renamePerson(id: PersonId, name: string): SaveResult<Person> {
+      if (id === ME_ID) return { ok: false, reason: 'invalid-data', problems: ['me'] }
+      return update<Person>((data) => {
+        const index = data.people.findIndex((p) => p.id === id)
+        if (index < 0) return { ok: false, reason: 'unknown-person', personIds: [id] }
+        const { needsName: _, ...person } = data.people[index]!
+        const checked = personSchema.safeParse({ ...person, name: name.trim() })
+        if (!checked.success) return { ok: false, reason: 'invalid-data', problems: problemsOf(checked.error) }
+        return { data: { ...data, people: data.people.with(index, checked.data) }, value: checked.data }
+      })
     },
 
     /** Everything exactly as stored, for the recovery screen. */
