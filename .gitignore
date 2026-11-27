@@ -30,3 +30,7 @@ coverage
 # Local tool state
 .playwright-mcp/
 .claude/settings.local.json
+
+# Mutation testing (root only: docs/reports is committed)
+.stryker-tmp/
+/reports/

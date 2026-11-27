@@ -1,7 +1,7 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { monthSummary } from './summary'
-import { entries } from './testing/arbitraries'
+import { MONTHS, entries } from './testing/arbitraries'
 import type { Bill, Entry, Loan, Repay } from './types'
 
 const bill = (date: string, payers: Bill['payers'], owed: Bill['owed'], groupId?: string): Bill => ({
@@ -69,17 +69,73 @@ describe('monthSummary', () => {
     expect(monthSummary(others, 'me', '2026-11')).toEqual({ month: '2026-11', totals: ZERO, byGroup: [] })
   })
 
-  it.each(['2026-13', '2026-00', '2026-1', '2026', '2026-11-01', ''])('refuses the month %j', (month) => {
+  it.each(['2026-13', '2026-00', '2026-1', '2026', '2026-11-01', '12026-11', ''])('refuses the month %j', (month) => {
     expect(() => monthSummary([], 'me', month)).toThrow(RangeError)
   })
 
-  it('groups always add up to the totals', () => {
+})
+
+describe('monthSummary properties', () => {
+  const month = fc.constantFrom(...MONTHS)
+  const sum = (values: number[]) => values.reduce((a, b) => a + b, 0)
+
+  /** Recomputed straight from the definitions in the spec, one filter per figure. */
+  function naive(list: Entry[], monthKey: string) {
+    const inMonth = list.filter((e) => e.date.slice(0, 7) === monthKey)
+    const bills = inMonth.filter((e) => e.kind === 'bill')
+    const lent = sum(
+      inMonth
+        .filter((e) => e.kind === 'loan')
+        .filter((e) => e.lenderId === 'me' && e.borrowerId !== 'me')
+        .map((e) => e.amount),
+    )
+    return {
+      myShare: sum(bills.map((b) => b.owed.me ?? 0)),
+      cashOut: sum(bills.map((b) => b.payers.me ?? 0)) + lent,
+      lent,
+      repaidToMe: sum(
+        inMonth
+          .filter((e) => e.kind === 'repay')
+          .filter((e) => e.toId === 'me' && e.fromId !== 'me')
+          .map((e) => e.amount),
+      ),
+    }
+  }
+
+  it('totals match a naive recomputation, in every month', () => {
     fc.assert(
-      fc.property(entries, (generated) => {
-        const { totals, byGroup } = monthSummary(generated, 'me', '2026-01')
-        for (const key of Object.keys(ZERO) as (keyof typeof ZERO)[]) {
-          expect(byGroup.reduce((a, g) => a + g[key], 0)).toBe(totals[key])
+      fc.property(entries, (list) => {
+        for (const m of MONTHS) {
+          expect(monthSummary(list, 'me', m).totals).toEqual(naive(list, m))
         }
+      }),
+    )
+  })
+
+  it('groups add up to the totals, in every month', () => {
+    fc.assert(
+      fc.property(entries, (list) => {
+        for (const m of MONTHS) {
+          const { totals, byGroup } = monthSummary(list, 'me', m)
+          for (const key of Object.keys(ZERO) as (keyof typeof ZERO)[]) {
+            expect(sum(byGroup.map((g) => g[key]))).toBe(totals[key])
+          }
+        }
+      }),
+    )
+  })
+
+  it('entries outside the month never change the result', () => {
+    // The same month last year and next year, and months no list uses.
+    const otherPrefix = fc.constantFrom('2025', '2027')
+    fc.assert(
+      fc.property(entries, entries, month, otherPrefix, (list, others, m, year) => {
+        const outside = others.flatMap((e): Entry[] => [
+          { ...e, id: `y-${e.id}`, date: `${year}${e.date.slice(4)}` },
+          { ...e, id: `m-${e.id}`, date: `2026-11${e.date.slice(7)}` },
+          ...(e.date.startsWith(m) ? [] : [{ ...e, id: `o-${e.id}` }]),
+        ])
+        expect(monthSummary([...outside, ...list], 'me', m)).toEqual(monthSummary(list, 'me', m))
       }),
     )
   })

@@ -1,3 +1,4 @@
+import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { MAX_SATANG } from './money'
 import { buildPromptPayPayload, crc16, parsePromptPayId } from './promptpay'
@@ -58,6 +59,9 @@ describe('parsePromptPayId', () => {
     '1234567890122', // wrong check digit
     '1111111111111', // wrong check digit
     '12345678901234', // 14 digits
+    '12345678901215', // 14 digits: a valid national ID plus one more
+    '1234567890121x', // a valid national ID plus a letter
+    '91234567890121', // one digit before a valid national ID
     '0123456789012345', // 16 digits
     '+66801234567',
     '080123456a',
@@ -66,28 +70,71 @@ describe('parsePromptPayId', () => {
     expect(parsePromptPayId(input)).toBeNull()
   })
 
-  // The check digit is a typo filter, not a guarantee. It misses about 9% of
-  // single-digit typos, so the payee name in the bank app is still the real check.
-  describe('check digit limits', () => {
-    const typosAt = (position: number) =>
-      [...'0123456789']
-        .filter((digit) => digit !== VALID_NATIONAL_ID[position])
-        .map((digit) => VALID_NATIONAL_ID.slice(0, position) + digit + VALID_NATIONAL_ID.slice(position + 1))
-    const accepted = (ids: string[]) => ids.filter((id) => parsePromptPayId(id) !== null)
+})
 
-    it('catches every wrong check digit', () => {
-      expect(accepted(typosAt(12))).toEqual([])
-    })
+// The check digit is a typo filter, not a guarantee. The payee name shown by the
+// bank app is still the real check.
+describe('national ID check digit limits', () => {
+  /** Mod-11 sum of the first 12 digits, weights 13 down to 2. */
+  const residue = (digits: string) =>
+    [...digits.slice(0, 12)].reduce((sum, digit, i) => sum + Number(digit) * (13 - i), 0) % 11
+  const withCheckDigit = (first12: string) => first12 + ((11 - residue(first12)) % 10)
 
-    it('cannot catch any typo in the 3rd digit, whose weight is 11', () => {
-      expect(accepted(typosAt(2))).toHaveLength(9)
-    })
+  const validId = fc
+    .array(fc.integer({ min: 0, max: 9 }), { minLength: 12, maxLength: 12 })
+    .map((digits) => withCheckDigit(digits.join('')))
 
-    it('catches all but these other typos of the sample ID', () => {
-      const positions = Array.from({ length: 13 }, (_, i) => i).filter((i) => i !== 2)
-      expect(accepted(positions.flatMap(typosAt))).toHaveLength(9)
-    })
+  const replaceDigit = (id: string, position: number, digit: number) =>
+    id.slice(0, position) + digit + id.slice(position + 1)
+
+  /** A generated valid ID with one digit at `position` changed. */
+  const typo = (position: fc.Arbitrary<number>) =>
+    fc
+      .tuple(validId, position, fc.integer({ min: 1, max: 9 }))
+      .map(([id, at, shift]) => ({ id, at, typed: replaceDigit(id, at, (Number(id[at]) + shift) % 10) }))
+
+  const accepts = (id: string) => parsePromptPayId(id) !== null
+
+  it('accepts every correctly built ID', () => {
+    fc.assert(fc.property(validId, (id) => accepts(id)))
   })
+
+  it('always rejects a wrong 13th digit', () => {
+    fc.assert(fc.property(typo(fc.constant(12)), ({ typed }) => !accepts(typed)))
+  })
+
+  it('always accepts a wrong 3rd digit, because its weight is 11', () => {
+    fc.assert(fc.property(typo(fc.constant(2)), ({ typed }) => accepts(typed)))
+  })
+
+  it('lets any other typo through only between residues 0 and 10, which share check digit 1', () => {
+    const otherPosition = fc.integer({ min: 0, max: 11 }).filter((at) => at !== 2)
+    fc.assert(
+      fc.property(typo(otherPosition), ({ id, typed }) => {
+        const pair = [residue(id), residue(typed)].sort((a, b) => a - b)
+        expect(accepts(typed)).toBe(pair[0] === 0 && pair[1] === 10)
+      }),
+      { numRuns: 2000 },
+    )
+  })
+
+  it('accepts about 9% of all single-digit typos', () => {
+    let accepted = 0
+    let tried = 0
+    for (const id of fc.sample(validId, { numRuns: 20_000, seed: 1 })) {
+      for (let at = 0; at < 13; at += 1) {
+        for (let digit = 0; digit < 10; digit += 1) {
+          if (id[at] === String(digit)) continue
+          tried += 1
+          if (accepts(replaceDigit(id, at, digit))) accepted += 1
+        }
+      }
+    }
+    const percent = (100 * accepted) / tried
+    console.info(`check digit accepts ${percent.toFixed(2)}% of ${tried} single-digit typos`)
+    expect(percent).toBeGreaterThan(8.8)
+    expect(percent).toBeLessThan(9.6)
+  }, 60_000)
 })
 
 describe('buildPromptPayPayload', () => {

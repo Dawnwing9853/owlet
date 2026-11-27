@@ -114,6 +114,13 @@ describe('computeBill', () => {
     expect(result.totals.service).toBe(0)
   })
 
+  it('allows a total exactly at the limit', () => {
+    const result = computeBill(
+      draft({ items: [item('i1', MAX_SATANG, ['me'])], payers: { me: MAX_SATANG } }),
+    )
+    expect(result.issues).toEqual([])
+  })
+
   it('reports a total over the limit even when every price is within it', () => {
     const result = computeBill(
       draft({ items: [item('i1', MAX_SATANG, ['me']), item('i2', 1, ['me'])], payers: {} }),

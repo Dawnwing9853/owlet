@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "tsconfigFile": "tsconfig.skipped-for-stryker.json",
+  "testRunner": "vitest",
+  "plugins": ["@stryker-mutator/vitest-runner"],
+  "coverageAnalysis": "perTest",
+  "timeoutMS": 60000,
+  "mutate": ["src/domain/**/*.ts", "!src/domain/**/*.test.ts", "!src/domain/testing/**"],
+  "reporters": ["clear-text", "json", "html"],
+  "ignorePatterns": [".claude", "docs", "dist", "coverage", ".playwright-mcp", ".impeccable"],
+  "tempDirName": ".stryker-tmp"
+}

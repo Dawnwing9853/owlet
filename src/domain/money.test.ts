@@ -148,6 +148,9 @@ describe('distribute', () => {
     expect(() => distribute(1.5, [1])).toThrow(RangeError)
     expect(() => distribute(1, [-1, 2])).toThrow(RangeError)
     expect(() => distribute(1, [0.5])).toThrow(RangeError)
+    // Integers too big to be exact.
+    expect(() => distribute(2 ** 53, [1])).toThrow(RangeError)
+    expect(() => distribute(1, [2 ** 53])).toThrow(RangeError)
   })
 
   it('always sums exactly, each part within 1 satang of its exact share', () => {

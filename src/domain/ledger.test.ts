@@ -81,6 +81,12 @@ describe('one entry', () => {
     expect(entryDebts(entry)).toEqual([debt('c', 'a', 1), debt('d', 'b', 1)])
   })
 
+  it('gives the same debts whatever order the bill lists people in', () => {
+    const entry = bill({ b: 1, a: 1 }, { c: 1, d: 1 })
+    expect(entryDebts(entry)).toEqual([debt('c', 'a', 1), debt('d', 'b', 1)])
+    expect(Object.keys(entryNets(entry))).toEqual(['a', 'b', 'c', 'd'])
+  })
+
   it('treats a loan as the borrower owing the lender', () => {
     expect(entryDebts(loan('me', 'ton', 500))).toEqual([debt('ton', 'me', 500)])
   })
@@ -134,6 +140,19 @@ describe('simplify', () => {
     expect(overallDebts(settled, [group(false)])).toHaveLength(3)
   })
 
+  it('lets the biggest debtor pay the biggest creditor first', () => {
+    // Taking people in any other order needs 3 transfers instead of 2.
+    const debts = [debt('c', 'a', 100), debt('d', 'b', 500)]
+    expect(simplifyDebts(debts)).toEqual([debt('c', 'a', 100), debt('d', 'b', 500)])
+    const crossed = [debt('c', 'b', 100), debt('d', 'a', 100), debt('d', 'b', 400)]
+    expect(simplifyDebts(crossed)).toEqual([debt('c', 'a', 100), debt('d', 'b', 500)])
+  })
+
+  it('breaks ties by the smaller id, whatever order the debts come in', () => {
+    const debts = [debt('d', 'b', 100), debt('c', 'a', 100)]
+    expect(simplifyDebts(debts)).toEqual([debt('c', 'a', 100), debt('d', 'b', 100)])
+  })
+
   it('only counts the group it is asked about', () => {
     expect(groupDebts([...trip, loan('me', 'ton', 999)], group(false))).toEqual(groupDebts(trip, group(false)))
   })
@@ -153,6 +172,16 @@ describe('simplify', () => {
 describe('debtsByGroup', () => {
   it('lists groups in id order with ungrouped entries last', () => {
     const list = [loan('me', 'ton', 1), loan('me', 'ton', 2, 'b'), loan('me', 'ton', 3, 'a'), loan('me', 'ton', 4)]
+    expect(debtsByGroup(list, []).map((g) => g.groupId)).toEqual(['a', 'b', null])
+  })
+
+  it.each([
+    [[undefined, 'b', 'a']],
+    [['b', undefined, 'a']],
+    [['a', 'b', undefined]],
+    [[undefined, 'a', 'b']],
+  ])('keeps that order when entries arrive as %j', (order) => {
+    const list = order.map((groupId, i) => loan('me', 'ton', i + 1, groupId))
     expect(debtsByGroup(list, []).map((g) => g.groupId)).toEqual(['a', 'b', null])
   })
 })

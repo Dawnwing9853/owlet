@@ -25,7 +25,7 @@ Do NOT also install Anthropic's `frontend-design` plugin: it overlaps with Impec
 - `zod` for validating stored/imported data
 - `qrcode` (npm) to render QR, `html-to-image` to export the receipt as PNG
 - `vite-plugin-pwa` for manifest + offline
-- Font: **Mitr** (rounded, loopless Thai) self-hosted via `@fontsource/mitr` so it works offline
+- Fonts, self-hosted so they work offline: **Mitr** (rounded, loopless Thai) via `@fontsource/mitr`, plus **Noto Sans Thai** via `@fontsource/noto-sans-thai` for money amounts
 - Deploy: GitHub Pages via GitHub Actions
 
 ## Folder layout
@@ -38,6 +38,7 @@ src/ui/         shared components (Receipt, Chip, MoneyInput, BottomNav…)
 
 ## Money rules (non-negotiable)
 - All money is **integer satang** (`type Satang = number`). Never floats. Convert only at input/display.
+- Input: `.` is the only decimal mark; `,` is only a thousands separator (`1500` and `1,500` are ฿1,500.00; `0.50` is ฿0.50). Invalid input such as `1,5` shows an inline error. A money field is never silently blanked or read as 0.
 - Display: always 2 decimals, `฿1,234.00` (en-US digits, Thai UI text). This applies everywhere amounts are shown.
 - Every split uses **largest-remainder** distribution so parts always sum exactly to the whole. Ties go to the smaller `personId`.
 - Balances are **never stored**; they are always derived from entries.
@@ -49,7 +50,7 @@ Group    { id, name, memberIds: string[], createdAt /*epoch ms*/, archived?: boo
 BillItem { id, name, price: Satang, sharedBy: string[] }   // personIds
 Bill     { kind:'bill', id, title, date, groupId?: string,
            items: BillItem[], payers: Record<personId, Satang>,
-           servicePct: number /*default 10, toggle*/, vat: boolean /*7%*/,
+           servicePct: number /*default 10, toggle*/, vat: boolean /*7%, default off*/,
            discount: Satang, note?: string,
            // snapshot computed at save time — ledger uses this (with payers), so history never changes if the algorithm changes:
            owed: Record<personId, Satang> }
@@ -66,6 +67,7 @@ Order, per person:
 2. Discount spread proportionally to subtotals.
 3. Service charge % on (subtotal − discount), if enabled. Calculated once on the bill total, rounded half-up to the satang, then split in proportion to each person's (subtotal − discount).
 4. VAT 7% on (subtotal − discount + service), if enabled. Calculated once on the bill total, rounded half-up to the satang, then split in proportion to each person's (subtotal − discount + service).
+- The VAT switch is labelled "บวก VAT 7%" and is **off by default**. For printed prices that already include VAT, leave it off.
 - There is no round-up to whole baht.
 - Multiple payers: user enters how much each paid. Default = me paid everything. Block save if Σpayers ≠ bill total, showing the difference.
 - Also block save: no items, discount larger than the items total, negative or non-integer amounts. 0-baht items are allowed.
@@ -91,7 +93,7 @@ Order, per person:
 2. **หารบิล**: title, optional group, participants (chips; add new friend inline), items (name, price, who shares — chips + "ทุกคน"), quick chips (อาหาร, เครื่องดื่ม, เบียร์, เหล้า, มิกเซอร์, น้ำแข็ง, ของหวาน), toggles: Service charge %, VAT 7%, ส่วนลด ฿. Payers section. Live **receipt preview** with per-person totals and per-item breakdown. Save → goes into ledger. Edit/delete from history.
 3. **กลุ่ม**: list, create, detail (members, entries, balances inside the group, simplify toggle, archive).
 4. **สรุปเดือน**: month picker; numbers + simple CSS/SVG bars: ส่วนที่เรากินจริง (my owed), เงินที่ควักออกไป (my `payers` amounts in bills + money lent), ให้ยืม / ได้คืน, breakdown by group.
-5. **ตั้งค่า**: friends (rename, archive — can't archive with non-zero balance), my PromptPay ID, backup, history list.
+5. **ตั้งค่า**: friends (rename, archive — can't archive with non-zero balance), my PromptPay ID (after entering it, ask me to scan my own QR and check the payee name my bank app shows; P3), backup, history list.
 
 ## Sharing
 - Text: copy to clipboard + LINE share link (check LINE's current share URL format). Text = title, total, each person's amount, my PromptPay.
@@ -100,13 +102,18 @@ Order, per person:
 ## Storage & backup
 - localStorage through one repository module; zod-validate on load; `schemaVersion` + migration functions.
 - Call `navigator.storage.persist()` on first run.
+- Load and import use the same checks: every bill has Σ`payers` = Σ`owed`, every date is a real `YYYY-MM-DD` date, every amount is within limits. `owed` is never recalculated on load.
+- A record that fails is quarantined with a Thai message, the rest still loads, and its raw data is kept through later saves. If the whole store can't be read, or comes from a newer app version, nothing is overwritten and a recovery screen is shown.
+- A bill can only be saved through the repository, which computes `owed` with `finalizeBill`.
+- An error boundary shows a recovery screen (export raw data, reset after confirming) instead of a blank page.
+- My own person record always has the id `me`.
 - Export JSON `{ schemaVersion, exportedAt, data }`; Import: validate, show counts preview, confirm, replace.
 - Banner "ยังไม่ได้ backup มา X วัน" when lastBackupAt > 7 days (dismissable for a day).
 
 ## Design brief: "detective owl, minimal receipt" (input for Impeccable, not a substitute for it)
 Feed this into `/impeccable init` and `/impeccable shape`. Impeccable may refine details, but these are fixed constraints:
 - Register: **product** (app UI / tool), not brand/marketing.
-- Users: me, a Thai university student, using it on my phone at the restaurant table, often one-handed, in a hurry. Speed of entering a bill matters more than visual flair.
+- Users: me, a Thai university student, on my phone. I mostly enter bills at home later, from the receipt or a photo of it; sometimes at the restaurant table, one-handed and in a hurry, which must still work. A typical bill has 9 or more people, splitting a mix of shared-by-everyone items and items only some people had. Priority: easy to enter completely and check against the receipt, then speed. Both matter more than visual flair.
 - **Light mode only** (intentional — tell Impeccable so it doesn't flag missing dark mode). Set `color-scheme: light`.
 - Palette (owl feathers + gold coins). All text pairs below pass WCAG AA on the background:
   | Token | Hex | Use |
@@ -121,9 +128,10 @@ Feed this into `/impeccable init` and `/impeccable shape`. Impeccable may refine
   | paid (olive) | `#4F6B2E` | settled / cleared (5.7:1) |
 - Owl lives in the details (mascot, empty states, coin-gold numbers), not in brown everywhere. Avoid the coffee-shop / luxury brown-gold-cream look.
 - Big tabular numerals for amounts. The receipt preview looks like a thermal receipt: dashed separators, zigzag bottom edge.
-- Typography: **Mitr** for everything. Check line-height for Thai vowels/tone marks (no clipped marks); test real Thai strings, not lorem ipsum.
+- Typography: **Mitr** for all text; **Noto Sans Thai** for money amounts. Check line-height for Thai vowels/tone marks (no clipped marks); test real Thai strings, not lorem ipsum.
   - Mitr has look-alike glyphs (ก ถ ภ, บ ป, ข ช). Test short friend names with these letters at 14px; if they're hard to tell apart, tell me and propose LINE Seed Sans TH (OFL, self-host) instead.
   - Check whether Mitr supports tabular figures (`font-variant-numeric: tabular-nums`). If not, use a rounded Latin font that does, for money amounts only, and tell me which one.
+  - Result (P2): Mitr has no tabular figures. Noto Sans Thai digits all have the same width by default, so money columns line up with it. It is not a rounded face.
 - Mobile-first, 44px touch targets, 16px inputs (no iOS zoom), `inputmode="decimal"` for money, visible focus, safe-area insets, WCAG AA contrast.
 - No emoji icons in UI; use a small icon set (lucide-react).
 
@@ -184,3 +192,13 @@ Accounts/login, backend, multi-user sync, multiple currencies, receipt OCR, noti
 | 2026-11-27 | Dates are `YYYY-MM-DD` strings; `createdAt` is epoch ms. | No timezone bugs in the month filter. |
 | 2026-11-27 | Dependencies are installed in the phase that first uses them. | No unused packages. |
 | 2026-11-27 | Amounts and bill totals are capped at ฿999,999,999.99; service charge is 0–100%. Added in P1, for the owner to confirm. | Keeps sums exact. A property test found that valid prices could add up to a total no payer amount could match. |
+| 2026-11-27 | VAT keeps one switch, "บวก VAT 7%", off by default. | Owner choice. VAT-inclusive prices work with it off. |
+| 2026-11-27 | `,` is not accepted as a decimal mark. | Owner: types `1500` or `0.50`. Revisit if an Android keyboard offers only `,`. |
+| 2026-11-27 | Limits confirmed: ฿999,999,999.99 per amount and bill; service 0–100%. | Owner choice. |
+| 2026-11-27 | Settings asks the owner to check the payee name after entering a PromptPay ID (P3). | Owner approved; the check digit misses about 9% of single-digit typos. |
+| 2026-11-27 | Corrupted records are quarantined and kept; an unreadable or newer store is never overwritten. | Phase 1 review: one bad record must not break the app or lose data. |
+| 2026-11-27 | My person record has the fixed id `me`. | If that record is ever damaged, recreating it keeps all entries linked. |
+| 2026-11-27 | P2 downloads approved: unslop's npm dependency, `npx impeccable`, and the Impeccable engine from GitHub Releases (SHA-256 checked). | Owner choice. |
+| 2026-11-27 | Bills are mostly entered at home later; 9+ people and mixed splits are typical. Completeness and checking against the receipt come before speed. One-handed table use stays supported. | Owner's answers to `/impeccable init`; they differed from the original brief. |
+| 2026-11-27 | Fonts are Mitr + Noto Sans Thai: Mitr for all text, Noto Sans Thai for money amounts. | Owner chose "Mitr + Noto Sans Thai" instead of the proposed Rubik. The owner confirmed which font does what. |
+| 2026-11-27 | Friend ids start with `p-`, which sorts after `me`, so when a split ties the leftover satang goes to me. | Agent choice in P2: with the smaller-id tie rule, other id formats would always charge a friend. |

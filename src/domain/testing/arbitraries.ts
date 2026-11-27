@@ -15,9 +15,12 @@ const price = fc.oneof(
   // Large, but 8 of these plus 100% service and VAT stay under the bill limit.
   fc.integer({ min: 0, max: 5_000_000_000 }),
 )
+/** Every month a generated entry can fall in. */
+export const MONTHS = ['2026-01', '2026-02', '2026-03']
+
 const date = fc
-  .tuple(fc.integer({ min: 1, max: 3 }), fc.integer({ min: 1, max: 28 }))
-  .map(([m, d]) => `2026-0${m}-${String(d).padStart(2, '0')}`)
+  .tuple(fc.constantFrom(...MONTHS), fc.integer({ min: 1, max: 28 }))
+  .map(([month, d]) => `${month}-${String(d).padStart(2, '0')}`)
 
 const items = fc
   .array(fc.record({ price, sharedBy: sharers }), { minLength: 1, maxLength: 8 })
