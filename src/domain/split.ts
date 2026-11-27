@@ -1,5 +1,5 @@
 // Bill calculation: item shares → discount → service charge → VAT.
-import { MAX_SATANG, distributeById, isAmount, percentOf } from './money'
+import { MAX_SATANG, distribute, distributeById, isAmount, percentOf } from './money'
 import type { Bill, PersonId, Satang } from './types'
 
 export type BillDraft = Pick<Bill, 'items' | 'payers' | 'servicePct' | 'vat' | 'discount'>
@@ -31,7 +31,10 @@ export interface PersonShare {
 export interface BillBreakdown {
   items: { itemId: string; shares: Record<PersonId, Satang> }[]
   people: Record<PersonId, PersonShare>
+  /** The whole bill: every item with a valid price, whether or not anyone shares it yet. */
   totals: { subtotal: Satang; discount: Satang; service: Satang; vat: Satang; total: Satang }
+  /** The part of the total that belongs to items nobody shares yet. 0 on a saveable bill. */
+  unassigned: Satang
   issues: BillIssue[]
 }
 
@@ -48,9 +51,14 @@ function serviceBasisPoints(pct: number): number | null {
   return valid ? basisPoints : null
 }
 
+/** These don't change the bill total, so the payers can still be checked against it. */
+const TOTAL_STILL_RIGHT: BillIssue['type'][] = ['unshared-item', 'duplicate-sharer']
+
 /**
  * Calculates a bill, valid or not, so the receipt preview can update live.
- * Items and settings that have a problem are left out and listed in `issues`.
+ * Problems are listed in `issues`. An invalid price, discount or percentage is
+ * left out of the total. An item nobody shares still counts towards the total,
+ * which is checked against the paper receipt, but is charged to no one.
  */
 export function computeBill(draft: BillDraft): BillBreakdown {
   const issues: BillIssue[] = []
@@ -58,13 +66,13 @@ export function computeBill(draft: BillDraft): BillBreakdown {
 
   const items: BillBreakdown['items'] = []
   const subtotals: Record<PersonId, Satang> = {}
-  let enteredSubtotal = 0
+  let subtotal = 0
   for (const item of draft.items) {
     if (!isAmount(item.price)) {
       issues.push({ type: 'invalid-price', itemId: item.id })
       continue
     }
-    enteredSubtotal += item.price
+    subtotal += item.price
     if (item.sharedBy.length === 0) {
       issues.push({ type: 'unshared-item', itemId: item.id })
       continue
@@ -77,40 +85,47 @@ export function computeBill(draft: BillDraft): BillBreakdown {
     items.push({ itemId: item.id, shares })
     for (const [id, share] of Object.entries(shares)) subtotals[id] = (subtotals[id] ?? 0) + share
   }
-  const subtotal = sum(Object.values(subtotals))
+  // One bucket per person in id order, then one for items nobody shares yet.
+  // The last bucket is 0 on a saveable bill, so it never takes a satang there.
+  const ids = Object.keys(subtotals).sort()
+  const weights = ids.map((id) => subtotals[id]!)
+  weights.push(subtotal - sum(weights))
 
   let discount = 0
   if (!isAmount(draft.discount)) {
     issues.push({ type: 'invalid-discount' })
   } else {
-    if (draft.discount > enteredSubtotal) issues.push({ type: 'discount-exceeds-subtotal' })
+    if (draft.discount > subtotal) issues.push({ type: 'discount-exceeds-subtotal' })
     discount = Math.min(draft.discount, subtotal)
   }
-  const discounts = distributeById(discount, subtotals)
+  const discounts = distribute(discount, weights)
 
   const serviceBp = serviceBasisPoints(draft.servicePct)
   if (serviceBp === null) issues.push({ type: 'invalid-service-pct' })
 
   // Service and VAT are rounded once on the whole bill, then split, so the
   // total matches the restaurant's receipt.
-  const afterDiscount = mapValues(subtotals, (value, id) => value - discounts[id]!)
+  const afterDiscount = weights.map((value, i) => value - discounts[i]!)
   const service = percentOf(subtotal - discount, serviceBp ?? 0)
-  const services = distributeById(service, afterDiscount)
+  const services = distribute(service, afterDiscount)
 
-  const vatBase = mapValues(afterDiscount, (value, id) => value + services[id]!)
+  const vatBase = afterDiscount.map((value, i) => value + services[i]!)
   const vat = draft.vat ? percentOf(subtotal - discount + service, VAT_BASIS_POINTS) : 0
-  const vats = distributeById(vat, vatBase)
+  const vats = distribute(vat, vatBase)
 
-  const people: Record<PersonId, PersonShare> = {}
-  for (const id of Object.keys(subtotals).sort()) {
-    people[id] = {
-      subtotal: subtotals[id]!,
-      discount: discounts[id]!,
-      service: services[id]!,
-      vat: vats[id]!,
-      owed: vatBase[id]! + vats[id]!,
-    }
-  }
+  const people: Record<PersonId, PersonShare> = Object.fromEntries(
+    ids.map((id, i) => [
+      id,
+      {
+        subtotal: weights[i]!,
+        discount: discounts[i]!,
+        service: services[i]!,
+        vat: vats[i]!,
+        owed: vatBase[i]! + vats[i]!,
+      },
+    ]),
+  )
+  const unassigned = vatBase[ids.length]! + vats[ids.length]!
   const total = subtotal - discount + service + vat
   if (total > MAX_SATANG) issues.push({ type: 'total-too-large' })
 
@@ -119,9 +134,11 @@ export function computeBill(draft: BillDraft): BillBreakdown {
 
   // The difference only means something once the total itself is right.
   const difference = total - sum(Object.values(draft.payers))
-  if (issues.length === 0 && difference !== 0) issues.push({ type: 'payer-mismatch', difference })
+  if (issues.every((issue) => TOTAL_STILL_RIGHT.includes(issue.type)) && difference !== 0) {
+    issues.push({ type: 'payer-mismatch', difference })
+  }
 
-  return { items, people, totals: { subtotal, discount, service, vat, total }, issues }
+  return { items, people, totals: { subtotal, discount, service, vat, total }, unassigned, issues }
 }
 
 export type FinalizeResult =

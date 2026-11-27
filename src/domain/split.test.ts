@@ -73,10 +73,70 @@ describe('computeBill', () => {
     expect(computeBill(draft({ items: [], payers: {} })).issues).toEqual([{ type: 'no-items' }])
   })
 
-  it('reports an item nobody shares and leaves it out of the preview', () => {
-    const result = computeBill(draft({ items: [item('i1', 10000, ['me']), item('i2', 5000, [])] }))
+  it('counts an item nobody shares in the bill total, but charges it to no one', () => {
+    const result = computeBill(
+      draft({ items: [item('i1', 10000, ['me']), item('i2', 5000, [])], payers: { me: 15000 } }),
+    )
     expect(result.issues).toEqual([{ type: 'unshared-item', itemId: 'i2' }])
-    expect(result.totals.total).toBe(10000)
+    expect(result.totals.total).toBe(15000)
+    expect(result.people.me!.owed).toBe(10000)
+    expect(result.unassigned).toBe(5000)
+  })
+
+  it('gives the full total while nothing is shared yet, as when typing off a receipt', () => {
+    const result = computeBill(
+      draft({
+        items: [item('i1', 120000, []), item('i2', 54000, [])],
+        servicePct: 10,
+        vat: true,
+        discount: 4000,
+        payers: {},
+      }),
+    )
+    // (1740.00 - 40.00) x 1.10 = 1870.00, plus 7% = 2000.90
+    expect(result.totals).toEqual({ subtotal: 174000, discount: 4000, service: 17000, vat: 13090, total: 200090 })
+    expect(result.people).toEqual({})
+    expect(result.unassigned).toBe(200090)
+  })
+
+  it('spreads the discount over items nobody shares yet, not only the shared ones', () => {
+    const result = computeBill(
+      draft({ items: [item('i1', 1000, ['me']), item('i2', 3000, [])], discount: 400, payers: {} }),
+    )
+    expect(result.people.me).toMatchObject({ discount: 100, owed: 900 })
+    expect(result.unassigned).toBe(2700)
+  })
+
+  it('still says how far the payers are while items are unshared', () => {
+    const result = computeBill(
+      draft({ items: [item('i1', 10000, ['me']), item('i2', 5000, [])], payers: { me: 10000 } }),
+    )
+    expect(result.issues).toEqual([
+      { type: 'unshared-item', itemId: 'i2' },
+      { type: 'payer-mismatch', difference: 5000 },
+    ])
+  })
+
+  it('never lets who shares what change the bill total', () => {
+    const partly = validBillDraft.chain((full) =>
+      fc.tuple(
+        fc.constant(full),
+        fc.array(fc.boolean(), { minLength: full.items.length, maxLength: full.items.length }),
+      ),
+    )
+    fc.assert(
+      fc.property(partly, ([full, keep]) => {
+        const items = full.items.map((i, n) => (keep[n] ? i : { ...i, sharedBy: [] }))
+        const result = computeBill({ ...full, items })
+        expect(result.totals).toEqual(computeBill(full).totals)
+        expect(sum(Object.values(result.people).map((p) => p.owed)) + result.unassigned).toBe(
+          result.totals.total,
+        )
+        expect(result.unassigned).toBeGreaterThanOrEqual(0)
+        if (keep.every(Boolean)) expect(result.unassigned).toBe(0)
+      }),
+      { numRuns: 500 },
+    )
   })
 
   it('reports a person listed twice on one item', () => {
@@ -103,7 +163,11 @@ describe('computeBill', () => {
 
   it('does not call a discount too big just because an item is not shared yet', () => {
     const result = computeBill(
-      draft({ items: [item('i1', 1000, ['me']), item('i2', 9000, [])], discount: 5000 }),
+      draft({
+        items: [item('i1', 1000, ['me']), item('i2', 9000, [])],
+        discount: 5000,
+        payers: { me: 5000 },
+      }),
     )
     expect(result.issues).toEqual([{ type: 'unshared-item', itemId: 'i2' }])
   })

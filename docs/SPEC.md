@@ -74,6 +74,7 @@ Order, per person:
 - Also block save: no items, discount larger than the items total, negative or non-integer amounts. 0-baht items are allowed.
 - Limits: each amount, and the bill total, is at most ฿999,999,999.99. Service charge is 0–100%.
 - Items with nobody in `sharedBy` → warning, block save.
+- The bill total counts **every item with a valid price**, shared or not, so it can be checked against the receipt while typing. Per-person amounts cover shared items only; the rest is shown as "ยังไม่มีคนหาร".
 - No separate "equal split" mode: one item shared by everyone covers it. Add a quick action "หารเท่าทั้งบิล" that creates one item with all participants.
 
 ## Ledger (src/domain/ledger.ts)
@@ -92,6 +93,16 @@ Order, per person:
 ## Screens (Thai UI, bottom nav)
 1. **ยอดค้าง** (home): two big numbers "คนอื่นติดเรา ฿…" / "เราติดคนอื่น ฿…" (debt rust). List per person (all groups combined). Tap a person → detail: entries, breakdown by group, actions: บันทึกคืนเงิน (partial allowed), แสดง QR, คัดลอกข้อความทวง. Button "+ บันทึกยืมเงิน".
 2. **หารบิล**: title, optional group, participants (chips; add new friend inline), items (name, price, who shares — chips + "ทุกคน"), quick chips (อาหาร, เครื่องดื่ม, เบียร์, เหล้า, มิกเซอร์, น้ำแข็ง, ของหวาน), toggles: Service charge %, VAT 7%, ส่วนลด ฿. Payers section. Live **receipt preview** with per-person totals and per-item breakdown. Save → goes into ledger. Edit/delete from history.
+   - Two steps on one screen, switchable at any time: **รายการ** (title, date, people, item lines, หารเท่าทั้งบิล, service, VAT, discount) and **ใครหาร** (who shares each item, payers, receipt).
+   - A bar pinned at the bottom always shows the grand total, what still blocks saving, and save. Pressing save while blocked goes to the problem.
+   - The date starts as today and can be changed.
+   - "เรา" is in the people from the start. A new item has **nobody** sharing it (except หารเท่าทั้งบิล).
+   - Several items can be ticked and given people at once ("ทุกคน" or "เลือกคน…"). This **replaces** who shared them.
+   - Removing a person removes them from every item and from the payers, after asking if they were used.
+   - "ทุกคน" stores the people at that moment. A person added later is not added to old items; the label becomes e.g. "10 จาก 11 คน".
+   - Payers start as "เราจ่ายหมด", which follows the total.
+   - The receipt is at the end of ใครหาร on a phone, and a right column on wide screens.
+   - No note field and no group picker (until P4).
 3. **กลุ่ม**: list, create, detail (members, entries, balances inside the group, simplify toggle, archive).
 4. **สรุปเดือน**: month picker; numbers + simple CSS/SVG bars: ส่วนที่เรากินจริง (my owed), เงินที่ควักออกไป (my `payers` amounts in bills + money lent), ให้ยืม / ได้คืน, breakdown by group.
 5. **ตั้งค่า**: friends (rename, archive — can't archive with non-zero balance), friend rename is built in P2 (archive comes later), my PromptPay ID (after entering it, ask me to scan my own QR and check the payee name my bank app shows; P3), backup, history list.
@@ -226,3 +237,8 @@ Accounts/login, backend, multi-user sync, multiple currencies, receipt OCR, noti
 | 2026-11-27 | Friend rename is built in P2. | Owner choice: recreated people need a name. |
 | 2026-11-27 | Each friend has a stored colour slot (30 slots); names are at least 16px. | Owner request: tell people apart in big groups. |
 | 2026-11-27 | Both fonts are self-hosted with only the Thai and Latin subsets. | Phase 2 review: the app must work offline. |
+| 2026-11-27 | Bill screen is two steps (รายการ / ใครหาร) with a pinned total bar; people see all items first, then say who shares. | Owner: types every item first; checks the grand total against the receipt. |
+| 2026-11-27 | A new item starts with nobody sharing it. | Owner choice: nobody is charged without being picked. |
+| 2026-11-27 | Several items can be assigned at once. Added to the original spec. | Owner chose this structure in `/impeccable shape`. |
+| 2026-11-27 | The bill total includes items nobody shares yet. | Otherwise the total would read ฿0.00 while items are being typed. |
+| 2026-11-27 | Shape brief approved: me included from the start, batch assign replaces, removing a person asks first, "ทุกคน" does not grow later, receipt placement, no note field. | Owner approved the brief. |

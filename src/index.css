@@ -1,4 +1,22 @@
+@import './ui/fonts.css';
 @import 'tailwindcss';
+
+/* Palette from the spec's design brief. `static`: every token is emitted, even
+   before a class uses it, so var(--color-debt) never silently falls back to ink. */
+@theme static {
+  --color-bg: #FBF7F1; /* parchment: page */
+  --color-paper: #FFFFFF; /* inputs and the receipt */
+  --color-ink: #2B1D14; /* espresso: body text */
+  --color-primary: #6B4A2F; /* owl brown: primary actions, white text */
+  --color-line: #B8916A; /* feather tan: borders only, never text */
+  --color-gold: #D4A017; /* coin: shapes only, never text */
+  --color-gold-text: #8A6508; /* "needs attention" text */
+  --color-debt: #B23A1E; /* money owed only */
+  --color-paid: #4F6B2E; /* settled only */
+
+  --font-sans: 'Mitr', system-ui, sans-serif;
+  --font-money: 'Noto Sans Thai', 'Mitr', sans-serif;
+}
 
 :root {
   color-scheme: light;
@@ -69,4 +87,211 @@
   --person-28-fg: #FFFFFF;
   --person-29-bg: #8D3D4D;
   --person-29-fg: #FFFFFF;
+}
+
+@layer base {
+  html {
+    background: var(--color-bg);
+    /* Keep a focused field clear of the pinned total bar. */
+    scroll-padding-bottom: 11rem;
+  }
+
+  body {
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    /* Thai vowels and tone marks need the room: 1.2 clips them in Mitr. */
+    line-height: 1.6;
+    caret-color: var(--color-primary);
+    accent-color: var(--color-primary);
+  }
+
+  h1,
+  h2,
+  h3 {
+    line-height: 1.5;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-gold) 45%, white);
+    color: var(--color-ink);
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  button,
+  summary,
+  label[for],
+  input[type='checkbox'] {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  /* Amounts: every digit is the same width in this face, so columns line up. */
+  .money {
+    font-family: var(--font-money);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1.5px solid var(--color-line);
+    border-radius: 10px;
+    background: var(--color-paper);
+    padding: 6px 14px;
+    font-weight: 500;
+  }
+
+  .btn:hover {
+    border-color: var(--color-primary);
+  }
+
+  .btn:active {
+    transform: scale(0.97);
+  }
+
+  .btn-primary {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    color: white;
+  }
+
+  /* data-blocked still works (it goes to the problem); aria-disabled does nothing. */
+  .btn-primary[data-blocked='true'],
+  .btn-primary[aria-disabled='true'] {
+    background: var(--color-paper);
+    color: var(--color-primary);
+    border-style: dashed;
+  }
+
+  .btn-quiet {
+    border-color: transparent;
+    background: transparent;
+    color: var(--color-primary);
+  }
+
+  .btn-icon {
+    width: 44px;
+    padding: 0;
+  }
+
+  .field {
+    min-height: 44px;
+    width: 100%;
+    min-width: 0;
+    border: 1.5px solid var(--color-line);
+    border-radius: 10px;
+    background: var(--color-paper);
+    padding: 6px 12px;
+    /* 16px or more, so iOS doesn't zoom on focus. */
+    font-size: 1rem;
+  }
+
+  .field::placeholder {
+    color: color-mix(in srgb, var(--color-ink) 68%, white);
+  }
+
+  /* A date field focuses its day/month/year parts, which :focus-visible misses. */
+  input[type='date'].field:focus-within {
+    outline: 3px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  .field[aria-invalid='true'] {
+    border: 2px solid var(--color-gold-text);
+  }
+
+  /* Anything that needs the owner to act: invalid input, items nobody shares. */
+  .attention {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    color: var(--color-gold-text);
+    font-weight: 500;
+  }
+
+  .attention > svg {
+    flex: none;
+    margin-top: 0.3em;
+  }
+
+  /* Person chips. Names are never below 16px. */
+  .chip {
+    display: inline-flex;
+    max-width: 100%;
+    min-height: 32px;
+    align-items: center;
+    gap: 6px;
+    border: 1.5px solid transparent;
+    border-radius: 999px;
+    padding: 2px 12px;
+    font-size: 1rem;
+  }
+
+  .chip > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chip-toggle {
+    min-height: 44px;
+    padding-left: 10px;
+  }
+
+  /* Selection never relies on colour: the icon changes and a ring appears. */
+  .chip-toggle[aria-pressed='true'] {
+    outline: 2.5px solid var(--color-ink);
+    outline-offset: 1.5px;
+  }
+
+  .chip-toggle[aria-pressed='true']:focus-visible {
+    outline: 4px solid var(--color-primary);
+  }
+
+  .section {
+    border-top: 1px solid var(--color-line);
+    padding-top: 16px;
+  }
+
+  /* The receipt is paper off a thermal printer: black on white, torn edge. */
+  .receipt {
+    background: var(--color-paper);
+    padding: 16px 16px 20px;
+    --tooth: 14px;
+    -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% /
+      var(--tooth) 100%;
+    mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / var(--tooth)
+      100%;
+  }
+
+  .receipt-rule {
+    border-top: 1.5px dashed color-mix(in srgb, var(--color-ink) 55%, white);
+  }
+}
+
+dialog.sheet {
+  width: min(100%, 560px);
+  max-width: 100%;
+  max-height: 85dvh;
+  margin: auto auto 0;
+  border: 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+}
+
+dialog.sheet::backdrop {
+  background: rgb(43 29 20 / 55%);
 }

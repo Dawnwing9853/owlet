@@ -5,5 +5,29 @@
       "maxFindings": 5,
       "maxChars": 8000
     }
+  },
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "src/index.css"
+        ],
+        "createdAt": "2026-11-27T09:27:14.479Z",
+        "reason": "Owner's spec pins bg (parchment) #FBF7F1 as a fixed design token and describes it as near-white, not yellow cream (docs/SPEC.md, design brief)."
+      },
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "http://127.0.0.1:*/**"
+        ],
+        "createdAt": "2026-11-27T09:27:32.812Z",
+        "reason": "Same pinned bg token as above, seen when scanning the local dev server."
+      }
+    ]
   }
 }
